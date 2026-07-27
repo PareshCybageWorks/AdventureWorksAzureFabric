@@ -17,6 +17,23 @@
     "severity": {
       "enum": ["info", "warning", "error", "critical"],
       "description": "Must be declared in severity_levels."
+    },
+    "reconciliation_side": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table", "expression"],
+      "description": "One side of a reconciliation. Both sides must agree on whether a key is used.",
+      "properties": {
+        "table": { "type": "string" },
+        "expression": {
+          "type": "string",
+          "description": "A Spark SQL AGGREGATE over that table, e.g. sum(subtotal)."
+        },
+        "key": {
+          "type": "string",
+          "description": "Column to group and join on. Present on both sides means a per-key comparison and the measure is the share of keys that disagree; absent on both means grand totals and the measure is the relative difference."
+        }
+      }
     }
   },
 
@@ -139,6 +156,7 @@
                 "rule": {
                   "enum": ["not_null", "unique", "referential_integrity",
                            "accepted_values", "range", "arithmetic_consistency",
+                           "reconciliation",
                            "row_count_delta", "freshness", "schema_match"],
                   "description": "Must have an evaluator in ttfabric/monitoring.py."
                 },

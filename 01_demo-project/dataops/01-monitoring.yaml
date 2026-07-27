@@ -250,7 +250,9 @@ expectations:
   checks:
   - id: SL-PROD-001
     rule: range
-    column: list_price
+    # `price`, not `list_price`: measured_on is input, so this runs against
+    # bronze_commerce_products, where silver has not yet renamed the column.
+    column: price
     min: 0.01
     max: 100000
     severity: warning
@@ -351,9 +353,16 @@ expectations:
     measured_on: input
     note: Calibrated from order_null_date = 224/25646 = 0.87%
   - id: SL-ORD-006
-    rule: arithmetic_consistency
+    rule: reconciliation
     severity: warning
-    expression: order_total = sum(order_items.subtotal)
+    left:
+      table: stg_orders
+      expression: sum(order_total)
+      key: order_id
+    right:
+      table: stg_order_items
+      expression: sum(subtotal)
+      key: order_id
     tolerance: 0.01
     warn_above: 0.021
     fail_above: 0.04
@@ -405,10 +414,14 @@ expectations:
     severity: critical
     fail_above: 0.0
   - id: GD-SALES-005
-    rule: arithmetic_consistency
+    rule: reconciliation
     severity: critical
-    expression: sum(line_revenue) = silver.sum(stg_order_items.subtotal)
-    tolerance: 0.01
+    left:
+      table: dbo.fct_sales
+      expression: sum(line_revenue)
+    right:
+      table: stg_order_items
+      expression: sum(subtotal)
     fail_above: 0.0
     note: 'End-to-end reconciliation: gold must tie back to silver'
 - table: dbo.dim_customer

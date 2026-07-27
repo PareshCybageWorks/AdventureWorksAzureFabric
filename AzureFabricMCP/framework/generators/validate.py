@@ -785,7 +785,25 @@ def check_monitoring(specs: dict, report: Report) -> None:
     warnings: list[str] = []
 
     SHARE_RULES = {"not_null", "unique", "referential_integrity",
-                   "accepted_values", "range", "arithmetic_consistency"}
+                   "accepted_values", "range", "arithmetic_consistency",
+                   "reconciliation"}
+
+    # `measured_on: input` runs against the UPSTREAM table, where silver has not
+    # yet renamed anything. A check naming the silver column fails at run time
+    # with an unresolved-column error that looks like a data problem.
+    #
+    # The silver mapping declares both names, so the correct one is knowable
+    # here. This is exactly the mistake SL-PROD-001 made: `list_price` measured
+    # on input, where the column is still `price`.
+    silver = specs.get("fabric/04-silver", {}).get("doc") or {}
+    upstream_columns: dict[str, set[str]] = {}
+    for table in silver.get("tables") or []:
+        target = table.get("target")
+        if not target:
+            continue
+        upstream_columns[target] = {
+            c["source"] for c in table.get("columns") or []
+            if isinstance(c, dict) and c.get("source")}
     seen_ids: set[str] = set()
     uncalibrated: list[str] = []
     total = 0
@@ -831,6 +849,28 @@ def check_monitoring(specs: dict, report: Report) -> None:
             # `measured_on: input` without a source is NOT flagged here.
             # generate_monitoring.py resolves it from the layer specs and
             # errors if it cannot, so warning about it twice is noise.
+
+            if check.get("measured_on") == "input" and check.get("column"):
+                known = upstream_columns.get(table)
+                if known and check["column"] not in known:
+                    errors.append(
+                        f"{where}: measured_on is input, so this runs against "
+                        f"the upstream table, but {check['column']!r} is a "
+                        f"{table} column name. Use the source name the silver "
+                        f"mapping declares.")
+
+            if check["rule"] == "reconciliation":
+                left = check.get("left") or {}
+                right = check.get("right") or {}
+                if not left or not right:
+                    errors.append(f"{where}: reconciliation needs both left "
+                                  f"and right")
+                elif bool(left.get("key")) != bool(right.get("key")):
+                    # One side grouped and the other not compares a per-key
+                    # total against a grand total, which is never meaningful.
+                    errors.append(f"{where}: one side declares a key and the "
+                                  f"other does not; either both group or "
+                                  f"neither does")
 
             if not check.get("note") and check["rule"] in SHARE_RULES:
                 uncalibrated.append(check["id"])

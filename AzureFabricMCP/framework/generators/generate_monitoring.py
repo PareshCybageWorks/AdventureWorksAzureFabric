@@ -159,6 +159,22 @@ def build(monitoring: dict, scaffolding: dict) -> str:
                 locations.setdefault(
                     check["references"].rsplit(".", 2)[0].rsplit(".", 1)[-1], entry)
 
+    # A reconciliation names two tables, and the interesting ones sit in
+    # DIFFERENT layers -- comparing gold against the silver it was built from is
+    # the whole point. Each side is placed by the layer of the expectation that
+    # declares it, falling back to the layer whose own expectation names it.
+    by_table = {e["table"].rsplit(".", 1)[-1]: e["layer"] for e in expectations}
+    for expectation in expectations:
+        for check in expectation["checks"]:
+            for side in ("left", "right"):
+                table = (check.get(side) or {}).get("table")
+                if not table:
+                    continue
+                bare = table.rsplit(".", 1)[-1]
+                layer = by_table.get(bare, expectation["layer"])
+                if storage.get(layer):
+                    locations.setdefault(bare, storage[layer])
+
     default_lakehouse_name = (storage.get("silver") or ("lakehouse", "lh_silver"))[1]
 
     return f'''# Generated from dataops/01-monitoring.yaml -- do not edit by hand.

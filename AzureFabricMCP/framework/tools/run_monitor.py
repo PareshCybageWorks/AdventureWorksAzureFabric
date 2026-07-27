@@ -63,9 +63,15 @@ def read_results(headers, storage_token, workspace, lakehouse_id,
     the gate for that would be a false negative on data quality, which is the
     worst possible direction for this check to be wrong in.
     """
+    # ONE statement, with run_id carried on every row.
+    #
+    # This previously ran a separate `SELECT MAX(run_id)` for the label. The
+    # lakehouse SQL endpoint syncs while the query runs, so the two evaluations
+    # could disagree -- and did: the label named one run while the rows came
+    # from a later one. Reporting the wrong run against the right numbers is
+    # worse than either being wrong on its own, because nothing looks off.
     statements = [
-        f"SELECT MAX(run_id) FROM {RESULTS_TABLE}",
-        f"""SELECT check_id, table_name, [rule_id], severity, status,
+        f"""SELECT run_id, check_id, table_name, [rule_id], severity, status,
                    CAST(measured AS VARCHAR(40)), CAST(limit_value AS VARCHAR(40)),
                    LEFT(ISNULL(detail, ''), 160)
             FROM {RESULTS_TABLE}
@@ -81,23 +87,17 @@ def read_results(headers, storage_token, workspace, lakehouse_id,
             body=QUERY, payload=statements, label="dqgate")
 
         if ok:
-            blocks, current = [], []
-            for line in lines:
-                if line == "--":
-                    blocks.append(current)
-                    current = []
-                elif line != "OK":
-                    current.append(line)
-
             rows = []
-            for line in (blocks[1] if len(blocks) > 1 else []):
+            for line in lines:
+                if line in ("--", "OK"):
+                    continue
                 parts = line.split("\t")
-                if len(parts) < 8:
+                if len(parts) < 9:
                     continue
                 rows.append(dict(zip(
-                    ("check_id", "table", "rule", "severity", "status",
+                    ("run_id", "check_id", "table", "rule", "severity", "status",
                      "measured", "limit", "detail"), parts)))
-            return rows, (blocks[0][0] if blocks and blocks[0] else "")
+            return rows, (rows[0]["run_id"] if rows else "")
 
         if attempt < attempts:
             print(f"  results not readable yet; retrying in {delay}s "

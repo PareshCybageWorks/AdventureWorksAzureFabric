@@ -48,9 +48,47 @@ individual run looks fine.
   `29/2048 = 1.42%`, so `warn_above: 0.022` has a visible justification.
 - **`measured_on: input` for anything calibrated on raw data.** A rule counting
   a defect is meaningless against the table cleansing already fixed.
+
+  **It also needs the SOURCE column name.** `measured_on: input` runs against
+  the upstream table, where silver has not yet renamed anything — so a check on
+  silver's `list_price` must say `price`, the name bronze uses. Getting this
+  wrong fails at run time with an unresolved-column error that looks like
+  missing data. `validate.py` resolves it against the silver mapping, which
+  declares both names.
 - **Set `fail_above: 0.0` for rules that should never fire at all** —
   referential integrity, accepted values. Zero tolerance is a statement, not
   laziness.
+
+- **Use `reconciliation`, not `arithmetic_consistency`, whenever two tables are
+  involved.** `arithmetic_consistency` evaluates a single DataFrame, so an
+  expression like `sum(line_revenue) = silver.sum(subtotal)` is not something it
+  can do — it fails at run time with an unresolved-name error that reads like a
+  data problem.
+
+  ```yaml
+  # grand totals: measure is the RELATIVE difference
+  - id: GD-SALES-005
+    rule: reconciliation
+    severity: critical
+    fail_above: 0.0            # gold must tie back to silver exactly
+    left:  { table: dbo.fct_sales,   expression: sum(line_revenue) }
+    right: { table: stg_order_items, expression: sum(subtotal) }
+
+  # per key: measure is the SHARE of keys that disagree
+  - id: SL-ORD-006
+    rule: reconciliation
+    severity: warning
+    warn_above: 0.021
+    fail_above: 0.04
+    tolerance: 0.01
+    left:  { table: stg_orders,      expression: sum(order_total), key: order_id }
+    right: { table: stg_order_items, expression: sum(subtotal),    key: order_id }
+  ```
+
+  A layer-to-layer reconciliation is the check that catches value being lost or
+  duplicated in transit, which no single-table rule can see. Both sides must
+  agree on whether a key is used — grouping one side and not the other compares
+  a per-key total against a grand total.
 
 ---
 

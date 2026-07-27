@@ -201,6 +201,65 @@ def measure_row_count_delta(df, check: dict, ctx: dict) -> float | None:
     return (ctx["rows"] - previous) / previous * 100.0
 
 
+def measure_reconciliation(df, check: dict, ctx: dict) -> float | None:
+    """Compare an aggregate across TWO tables.
+
+    `arithmetic_consistency` evaluates one DataFrame, so it cannot express
+    "gold revenue equals the silver subtotals it was built from" -- the check
+    that actually catches a layer losing or duplicating value. That needs two
+    tables, which is this.
+
+    Two shapes, both returning a share so one set of thresholds fits:
+
+      no key   grand totals. Measured value is the RELATIVE difference,
+               |left - right| / |right|, so a tolerance means the same thing
+               whatever the magnitude.
+
+      key      per-key totals joined on it. Measured value is the share of keys
+               whose totals disagree by more than `tolerance`.
+
+    The keyed form joins INNER on purpose. A key present on one side only is a
+    referential problem, not a reconciliation one, and `referential_integrity`
+    already measures it -- counting it twice would make both numbers harder to
+    act on.
+    """
+    from pyspark.sql import functions as F
+
+    left, right = check["left"], check["right"]
+    tolerance = float(check.get("tolerance", 0))
+
+    left_df = ctx["read"](left["table"])
+    right_df = ctx["read"](right["table"])
+
+    left_key, right_key = left.get("key"), right.get("key")
+    if left_key and right_key:
+        grouped_left = (left_df.groupBy(F.col(left_key).alias("_k"))
+                        .agg(F.expr(left["expression"]).alias("_l")))
+        grouped_right = (right_df.groupBy(F.col(right_key).alias("_k"))
+                         .agg(F.expr(right["expression"]).alias("_r")))
+        # Joined on a column of the same name on both sides, so the result has
+        # one `_k` and neither reference is ambiguous.
+        joined = grouped_left.join(grouped_right, "_k", "inner")
+        total = joined.count()
+        if not total:
+            return None
+        disagreeing = joined.filter(
+            F.abs(F.col("_l") - F.col("_r")) > tolerance).count()
+        return disagreeing / total
+
+    left_value = left_df.agg(F.expr(left["expression"]).alias("v")).collect()[0]["v"]
+    right_value = right_df.agg(F.expr(right["expression"]).alias("v")).collect()[0]["v"]
+    if left_value is None or right_value is None:
+        return None
+
+    left_value, right_value = float(left_value), float(right_value)
+    if right_value == 0:
+        # No denominator to be relative to: either both are zero and agree, or
+        # one side has value the other does not, which is a total mismatch.
+        return 0.0 if left_value == 0 else 1.0
+    return abs(left_value - right_value) / abs(right_value)
+
+
 def measure_schema_match(df, check: dict, ctx: dict) -> float | None:
     """Count of declared columns absent from the table."""
     expected = check.get("expected_columns") or ctx.get("expected_columns")
@@ -215,6 +274,7 @@ EVALUATORS: dict[str, Callable] = {
     "accepted_values": measure_accepted_values,
     "range": measure_range,
     "arithmetic_consistency": measure_arithmetic_consistency,
+    "reconciliation": measure_reconciliation,
     "referential_integrity": measure_referential_integrity,
     "freshness": measure_freshness,
     "row_count_delta": measure_row_count_delta,

@@ -42,6 +42,14 @@ CASES = [
     ("schema intact",                 "schema_match", 0.0, {}, PASS),
     ("columns missing",               "schema_match", 2.0, {}, FAIL),
 
+    # Reconciliation returns a share like the others -- a relative difference
+    # for grand totals, a share of disagreeing keys when grouped -- so the same
+    # threshold logic applies and zero tolerance means exactly zero.
+    ("layers tie out exactly",        "reconciliation", 0.0,     {"fail_above": 0.0}, PASS),
+    ("layers differ at all",          "reconciliation", 0.00001, {"fail_above": 0.0}, FAIL),
+    ("some keys disagree",            "reconciliation", 0.03,    {"warn_above": 0.021,
+                                                                  "fail_above": 0.04}, WARN),
+
     # Nothing to compare against on a first run. Reporting a breach for that
     # would train people to ignore the check.
     ("not measurable",                "not_null", None, SHARE, SKIP),
