@@ -24,6 +24,15 @@ version: 1
 metadata:
   name: demo-commerce-analytics
 
+# Every job that declares an environment is skipped unless the repository
+# variable FABRIC_DEPLOY_ENABLED is set to "true". Merging these workflows
+# before the secrets and GitHub Environments exist would otherwise turn every
+# push red for a reason that is not a fault -- and a red build meaning "not
+# configured yet" is one people learn to ignore.
+#
+# Set the variable once the setup in docs/CI-SETUP.md is done.
+deploy_guard: FABRIC_DEPLOY_ENABLED
+
 deployment_pipeline:
   name: dp-analytics
   description: Promotes Fabric items across the four environment workspaces.
@@ -140,6 +149,7 @@ workflows:
         environment: dev
         steps:
           - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env dev
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env dev --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env dev --create-missing
           - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev
@@ -161,6 +171,7 @@ workflows:
         environment: qa
         steps:
           - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
           - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
@@ -193,6 +204,7 @@ workflows:
         environment: prod
         steps:
           - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env prod
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env prod --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env prod --create-missing
           - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env prod
@@ -212,7 +224,9 @@ workflows:
       workflow_dispatch: {}
     jobs:
       - id: monitor
-        environment: prod
+        # No environment: this only checks that the generated notebook matches
+        # the spec, which needs no credentials. It becomes a real monitoring
+        # run -- and will need an environment -- once dq-gate is implemented.
         steps:
           - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
 

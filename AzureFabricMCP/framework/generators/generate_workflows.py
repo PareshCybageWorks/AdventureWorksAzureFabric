@@ -149,6 +149,20 @@ def workflow_yaml(workflow: dict, spec: dict) -> str:
         if job.get("description"):
             lines += [f"    {line}" for line in wrap(job["description"], prefix="# ")]
         lines.append("    runs-on: ubuntu-latest")
+
+        # A deploying job is skipped until a repository variable turns it on.
+        #
+        # Without this, merging the workflows makes every push to a deploy
+        # branch go red -- not because anything is wrong, but because the
+        # secrets and Environments do not exist yet. A red build that means
+        # "not configured" is one people learn to ignore.
+        #
+        # `vars` is used rather than `secrets` because the secrets context is
+        # not available in a job-level `if`.
+        guard = spec.get("deploy_guard")
+        if guard and job.get("environment"):
+            lines.append(f"    if: vars.{guard} == 'true'")
+
         if job.get("environment"):
             lines.append(f"    environment: {quote(job['environment'])}")
         if job.get("needs"):

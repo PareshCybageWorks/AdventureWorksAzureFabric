@@ -25,6 +25,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: vars.FABRIC_DEPLOY_ENABLED == 'true'
     environment: qa
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -45,6 +46,9 @@ jobs:
 
       - name: validate.py
         run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+
+      - name: provision_storage.py
+        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa
 
       - name: push_library.py
         run: python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
@@ -68,6 +72,7 @@ jobs:
     # The model has to answer, not merely deploy. A DirectLake model with a
     # relationship on the wrong column publishes cleanly and returns blank.
     runs-on: ubuntu-latest
+    if: vars.FABRIC_DEPLOY_ENABLED == 'true'
     environment: qa
     needs: [deploy]
     env:

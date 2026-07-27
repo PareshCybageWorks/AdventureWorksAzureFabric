@@ -24,6 +24,7 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: vars.FABRIC_DEPLOY_ENABLED == 'true'
     environment: dev
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -44,6 +45,9 @@ jobs:
 
       - name: validate.py
         run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+
+      - name: provision_storage.py
+        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env dev
 
       - name: push_library.py
         run: python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env dev --wait

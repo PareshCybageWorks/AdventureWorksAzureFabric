@@ -22,6 +22,12 @@
       "properties": { "name": { "type": "string" } }
     },
 
+    "deploy_guard": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Repository VARIABLE name gating every job that declares an environment. Until it is set to 'true', deploy jobs skip instead of failing -- so merging the workflows before secrets exist does not paint the repository red for a reason that is not a fault. Uses vars, not secrets: the secrets context is unavailable in a job-level `if`."
+    },
+
     "deployment_pipeline": {
       "type": "object",
       "additionalProperties": false,
