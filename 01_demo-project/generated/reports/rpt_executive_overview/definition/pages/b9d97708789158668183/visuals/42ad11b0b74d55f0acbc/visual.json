@@ -2,9 +2,9 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "42ad11b0b74d55f0acbc",
   "position": {
-    "x": 530,
-    "y": 20,
-    "width": 240,
+    "x": 1040,
+    "y": 150,
+    "width": 220,
     "height": 110,
     "z": 1002,
     "tabOrder": 1002
@@ -24,10 +24,10 @@
                       "Entity": "Audit"
                     }
                   },
-                  "Property": "Rows Lost From Bronze"
+                  "Property": "Value Retained To Gold"
                 }
               },
-              "queryRef": "Audit.Rows Lost From Bronze"
+              "queryRef": "Audit.Value Retained To Gold"
             }
           ]
         }
@@ -40,7 +40,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Rows lost from bronze'"
+                  "Value": "'Value retained'"
                 }
               }
             },

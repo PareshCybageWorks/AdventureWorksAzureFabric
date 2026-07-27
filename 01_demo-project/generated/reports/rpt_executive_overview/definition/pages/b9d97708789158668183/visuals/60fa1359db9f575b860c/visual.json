@@ -2,15 +2,15 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "60fa1359db9f575b860c",
   "position": {
-    "x": 1040,
+    "x": 785,
     "y": 20,
-    "width": 220,
+    "width": 240,
     "height": 110,
     "z": 1004,
     "tabOrder": 1004
   },
   "visual": {
-    "visualType": "slicer",
+    "visualType": "card",
     "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
@@ -18,16 +18,16 @@
           "projections": [
             {
               "field": {
-                "Column": {
+                "Measure": {
                   "Expression": {
                     "SourceRef": {
                       "Entity": "Audit"
                     }
                   },
-                  "Property": "Run"
+                  "Property": "Rows Quarantined"
                 }
               },
-              "queryRef": "Audit.Run"
+              "queryRef": "Audit.Rows Quarantined"
             }
           ]
         }
@@ -40,7 +40,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Audit run'"
+                  "Value": "'Quarantined'"
                 }
               }
             },

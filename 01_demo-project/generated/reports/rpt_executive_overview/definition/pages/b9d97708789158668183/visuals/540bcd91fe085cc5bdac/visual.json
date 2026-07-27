@@ -24,10 +24,10 @@
                       "Entity": "Audit"
                     }
                   },
-                  "Property": "Rows"
+                  "Property": "Bronze Rows"
                 }
               },
-              "queryRef": "Audit.Rows"
+              "queryRef": "Audit.Bronze Rows"
             }
           ]
         }
@@ -40,7 +40,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Bronze rows'"
+                  "Value": "'Rows in bronze'"
                 }
               }
             },
@@ -55,24 +55,5 @@
         }
       ]
     }
-  },
-  "filterConfig": {
-    "filters": [
-      {
-        "name": "ba301a87571452af9041",
-        "field": {
-          "Column": {
-            "Expression": {
-              "SourceRef": {
-                "Entity": "Audit"
-              }
-            },
-            "Property": "Layer"
-          }
-        },
-        "type": "Categorical",
-        "howCreated": "User"
-      }
-    ]
   }
 }

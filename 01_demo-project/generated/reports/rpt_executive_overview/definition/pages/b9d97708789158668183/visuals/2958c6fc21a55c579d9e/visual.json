@@ -2,19 +2,36 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "2958c6fc21a55c579d9e",
   "position": {
-    "x": 20,
-    "y": 455,
-    "width": 1240,
-    "height": 245,
+    "x": 655,
+    "y": 150,
+    "width": 605,
+    "height": 290,
     "z": 1007,
     "tabOrder": 1007
   },
   "visual": {
-    "visualType": "tableEx",
+    "visualType": "clusteredColumnChart",
     "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
-        "Values": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Layer"
+                }
+              },
+              "queryRef": "Audit.Layer"
+            }
+          ]
+        },
+        "Series": {
           "projections": [
             {
               "field": {
@@ -28,46 +45,11 @@
                 }
               },
               "queryRef": "Audit.Entity"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Layer"
-                }
-              },
-              "queryRef": "Audit.Layer"
-            },
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Table"
-                }
-              },
-              "queryRef": "Audit.Table"
-            },
-            {
-              "field": {
-                "Measure": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Rows"
-                }
-              },
-              "queryRef": "Audit.Rows"
-            },
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
             {
               "field": {
                 "Measure": {
@@ -80,32 +62,6 @@
                 }
               },
               "queryRef": "Audit.Value"
-            },
-            {
-              "field": {
-                "Measure": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Rejected"
-                }
-              },
-              "queryRef": "Audit.Rejected"
-            },
-            {
-              "field": {
-                "Measure": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Retention %"
-                }
-              },
-              "queryRef": "Audit.Retention %"
             }
           ]
         }
@@ -118,7 +74,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Layer flow'"
+                  "Value": "'Value by layer'"
                 }
               }
             },

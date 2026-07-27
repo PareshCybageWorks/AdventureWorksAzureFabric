@@ -24,10 +24,10 @@
                       "Entity": "Audit"
                     }
                   },
-                  "Property": "Retention %"
+                  "Property": "Gold Rows"
                 }
               },
-              "queryRef": "Audit.Retention %"
+              "queryRef": "Audit.Gold Rows"
             }
           ]
         }
@@ -40,7 +40,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Rows retained'"
+                  "Value": "'Rows in gold'"
                 }
               }
             },

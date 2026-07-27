@@ -193,31 +193,38 @@ reports:
           because the page needs it.
 
         visuals:
+          # Layer-scoped measures, not [Rows]/[Retention %]. A card has no
+          # axis, so an unscoped measure sums bronze, silver and gold together
+          # and reports retention as 2.7% -- which reads as catastrophic loss.
           - type: card
-            title: Bronze rows
+            title: Rows in bronze
             position: { x: 20, y: 20, width: 240, height: 110 }
             fields:
-              Values: [Audit.Rows]
-            filters:
-              - field: Audit.Layer
+              Values: [Audit.Bronze Rows]
 
           - type: card
-            title: Rows retained
+            title: Rows in gold
             position: { x: 275, y: 20, width: 240, height: 110 }
             fields:
-              Values: [Audit.Retention %]
+              Values: [Audit.Gold Rows]
 
           - type: card
-            title: Rows lost from bronze
+            title: Value retained
+            position: { x: 1040, y: 150, width: 220, height: 110 }
+            fields:
+              Values: [Audit.Value Retained To Gold]
+
+          - type: card
+            title: Retained to gold
             position: { x: 530, y: 20, width: 240, height: 110 }
             fields:
-              Values: [Audit.Rows Lost From Bronze]
+              Values: [Audit.Retention To Gold]
 
           - type: card
-            title: Rejected
+            title: Quarantined
             position: { x: 785, y: 20, width: 240, height: 110 }
             fields:
-              Values: [Audit.Rejected]
+              Values: [Audit.Rows Quarantined]
 
           - type: slicer
             title: Audit run

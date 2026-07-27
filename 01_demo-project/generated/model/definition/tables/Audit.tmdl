@@ -122,6 +122,72 @@ table Audit
 		displayFolder: Data Audit
 		lineageTag: 908ddc2d-b821-5f6d-a0fe-c63bf728f7c5
 
+	/// Rows that arrived in bronze, whatever layer is in context.
+	measure 'Bronze Rows' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			RETURN CALCULATE(SUM(Audit[Row Count]),
+			                 Audit[Run] = latest, Audit[Layer] = "bronze",
+			                 ALLSELECTED(Audit[Layer]))
+		formatString: #,0
+		displayFolder: Data Audit
+		lineageTag: c1d0231e-dd48-51d6-8a70-e16550878627
+
+	measure 'Gold Rows' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			RETURN CALCULATE(SUM(Audit[Row Count]),
+			                 Audit[Run] = latest, Audit[Layer] = "gold",
+			                 ALLSELECTED(Audit[Layer]))
+		formatString: #,0
+		displayFolder: Data Audit
+		lineageTag: bb0b7496-c97c-553b-a9c2-8972e3f18c37
+
+	/// Share of bronze rows that reached the star schema, counting only entities that HAVE a gold layer. Dividing by all of bronze gives 71%, which reads as heavy loss and is wrong: orders is a header table consumed into the fact and was never going to appear in gold, so its 25,646 rows would sit in the denominator with nothing above them. Compared like for like the answer is 95%.
+	measure 'Retention To Gold' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			VAR reachesGold =
+			    CALCULATETABLE(VALUES(Audit[Entity]),
+			                   Audit[Run] = latest, Audit[Layer] = "gold",
+			                   ALLSELECTED(Audit))
+			VAR comparableBronze =
+			    CALCULATE(SUM(Audit[Row Count]),
+			              Audit[Run] = latest, Audit[Layer] = "bronze",
+			              Audit[Entity] IN reachesGold,
+			              ALLSELECTED(Audit[Layer]), ALLSELECTED(Audit[Entity]))
+			RETURN DIVIDE([Gold Rows], comparableBronze)
+		formatString: 0.0%
+		displayFolder: Data Audit
+		lineageTag: afbb63b5-5469-59e8-938e-06279250bb76
+
+	/// Share of bronze VALUE that reached the star schema. The number to quote: rows can be dropped harmlessly, money cannot.
+	measure 'Value Retained To Gold' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			VAR reachesGold =
+			    CALCULATETABLE(VALUES(Audit[Entity]),
+			                   Audit[Run] = latest, Audit[Layer] = "gold",
+			                   ALLSELECTED(Audit))
+			VAR goldValue =
+			    CALCULATE(SUM(Audit[Measure Value]),
+			              Audit[Run] = latest, Audit[Layer] = "gold",
+			              ALLSELECTED(Audit[Layer]))
+			VAR bronzeValue =
+			    CALCULATE(SUM(Audit[Measure Value]),
+			              Audit[Run] = latest, Audit[Layer] = "bronze",
+			              Audit[Entity] IN reachesGold,
+			              ALLSELECTED(Audit[Layer]), ALLSELECTED(Audit[Entity]))
+			RETURN DIVIDE(goldValue, bronzeValue)
+		formatString: 0.0%
+		displayFolder: Data Audit
+		lineageTag: 7b68d2be-34db-5c1b-bdfb-a62695fa9c74
+
+	/// Rows rejected across every layer, and therefore accounted for.
+	measure 'Rows Quarantined' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			RETURN CALCULATE(SUM(Audit[Rejected Count]),
+			                 Audit[Run] = latest, ALLSELECTED(Audit[Layer]))
+		formatString: #,0
+		displayFolder: Data Audit
+		lineageTag: fa2920d7-eb03-510d-894b-6f8de333332d
+
 	partition Audit = entity
 		mode: directLake
 		source

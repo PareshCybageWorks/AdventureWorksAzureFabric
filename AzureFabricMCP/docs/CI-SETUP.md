@@ -111,6 +111,20 @@ Consider also setting a deployment branch rule on `prod` so only tags matching
 
 ---
 
+## 4b. Capacity
+
+Running on the **FTL64 trial** (`325b3b5d-…`), shared by all four workspaces.
+Ample for CI: the full pipeline takes ~13 minutes on it.
+
+The risk is expiry, not speed. When the trial lapses, every environment loses
+compute at once — including prod. `fabric/01-scaffolding.yaml` records an F2
+fallback that validation deliberately warns about, because F2 is roughly 32x
+less compute and Spark does not refuse, it crawls or dies on memory with nothing
+in the logs pointing at capacity. Size a replacement against a real
+`p_orchestrate_master` run before the trial ends; F8 is the realistic floor.
+
+---
+
 ## 5. Turn deploys on
 
 **Settings → Secrets and variables → Actions → Variables**

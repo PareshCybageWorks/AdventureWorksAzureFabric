@@ -2,9 +2,9 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "8446ad6f98af578f89cd",
   "position": {
-    "x": 655,
+    "x": 20,
     "y": 150,
-    "width": 605,
+    "width": 620,
     "height": 290,
     "z": 1006,
     "tabOrder": 1006
@@ -58,10 +58,10 @@
                       "Entity": "Audit"
                     }
                   },
-                  "Property": "Value"
+                  "Property": "Rows"
                 }
               },
-              "queryRef": "Audit.Value"
+              "queryRef": "Audit.Rows"
             }
           ]
         }
@@ -74,7 +74,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Value by layer'"
+                  "Value": "'Rows by layer'"
                 }
               }
             },

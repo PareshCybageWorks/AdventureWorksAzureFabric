@@ -480,3 +480,89 @@ measures:
     format: "0.0%"
     display_folder: Data Audit
     description: Share of bronze rows still present at this layer.
+
+  # Layer-scoped, for cards. [Rows] and [Retention %] are correct on an axis
+  # that carries a layer, and meaningless without one -- at the grand total they
+  # sum bronze, silver and gold together and report retention as 2.7%, which
+  # looks like catastrophic loss rather than a missing filter. A card has no
+  # axis, so it needs a measure that names the layer itself.
+  - name: Bronze Rows
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      RETURN CALCULATE(SUM(Audit[Row Count]),
+                       Audit[Run] = latest, Audit[Layer] = "bronze",
+                       ALLSELECTED(Audit[Layer]))
+    format: "#,0"
+    display_folder: Data Audit
+    description: Rows that arrived in bronze, whatever layer is in context.
+
+  - name: Gold Rows
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      RETURN CALCULATE(SUM(Audit[Row Count]),
+                       Audit[Run] = latest, Audit[Layer] = "gold",
+                       ALLSELECTED(Audit[Layer]))
+    format: "#,0"
+    display_folder: Data Audit
+
+  - name: Retention To Gold
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      VAR reachesGold =
+          CALCULATETABLE(VALUES(Audit[Entity]),
+                         Audit[Run] = latest, Audit[Layer] = "gold",
+                         ALLSELECTED(Audit))
+      VAR comparableBronze =
+          CALCULATE(SUM(Audit[Row Count]),
+                    Audit[Run] = latest, Audit[Layer] = "bronze",
+                    Audit[Entity] IN reachesGold,
+                    ALLSELECTED(Audit[Layer]), ALLSELECTED(Audit[Entity]))
+      RETURN DIVIDE([Gold Rows], comparableBronze)
+    format: "0.0%"
+    display_folder: Data Audit
+    description: >-
+      Share of bronze rows that reached the star schema, counting only entities
+      that HAVE a gold layer.
+
+      Dividing by all of bronze gives 71%, which reads as heavy loss and is
+      wrong: orders is a header table consumed into the fact and was never
+      going to appear in gold, so its 25,646 rows would sit in the denominator
+      with nothing above them. Compared like for like the answer is 95%.
+
+  - name: Value Retained To Gold
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      VAR reachesGold =
+          CALCULATETABLE(VALUES(Audit[Entity]),
+                         Audit[Run] = latest, Audit[Layer] = "gold",
+                         ALLSELECTED(Audit))
+      VAR goldValue =
+          CALCULATE(SUM(Audit[Measure Value]),
+                    Audit[Run] = latest, Audit[Layer] = "gold",
+                    ALLSELECTED(Audit[Layer]))
+      VAR bronzeValue =
+          CALCULATE(SUM(Audit[Measure Value]),
+                    Audit[Run] = latest, Audit[Layer] = "bronze",
+                    Audit[Entity] IN reachesGold,
+                    ALLSELECTED(Audit[Layer]), ALLSELECTED(Audit[Entity]))
+      RETURN DIVIDE(goldValue, bronzeValue)
+    format: "0.0%"
+    display_folder: Data Audit
+    description: >-
+      Share of bronze VALUE that reached the star schema. The number to quote:
+      rows can be dropped harmlessly, money cannot.
+
+  - name: Rows Quarantined
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      RETURN CALCULATE(SUM(Audit[Rejected Count]),
+                       Audit[Run] = latest, ALLSELECTED(Audit[Layer]))
+    format: "#,0"
+    display_folder: Data Audit
+    description: Rows rejected across every layer, and therefore accounted for.
+

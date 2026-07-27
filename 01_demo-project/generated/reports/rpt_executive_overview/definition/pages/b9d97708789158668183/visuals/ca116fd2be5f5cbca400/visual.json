@@ -2,19 +2,19 @@
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
   "name": "ca116fd2be5f5cbca400",
   "position": {
-    "x": 20,
-    "y": 150,
-    "width": 620,
-    "height": 290,
+    "x": 1040,
+    "y": 20,
+    "width": 220,
+    "height": 110,
     "z": 1005,
     "tabOrder": 1005
   },
   "visual": {
-    "visualType": "clusteredColumnChart",
+    "visualType": "slicer",
     "drillFilterOtherVisuals": true,
     "query": {
       "queryState": {
-        "Category": {
+        "Values": {
           "projections": [
             {
               "field": {
@@ -24,44 +24,10 @@
                       "Entity": "Audit"
                     }
                   },
-                  "Property": "Layer"
+                  "Property": "Run"
                 }
               },
-              "queryRef": "Audit.Layer"
-            }
-          ]
-        },
-        "Series": {
-          "projections": [
-            {
-              "field": {
-                "Column": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Entity"
-                }
-              },
-              "queryRef": "Audit.Entity"
-            }
-          ]
-        },
-        "Y": {
-          "projections": [
-            {
-              "field": {
-                "Measure": {
-                  "Expression": {
-                    "SourceRef": {
-                      "Entity": "Audit"
-                    }
-                  },
-                  "Property": "Rows"
-                }
-              },
-              "queryRef": "Audit.Rows"
+              "queryRef": "Audit.Run"
             }
           ]
         }
@@ -74,7 +40,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'Rows by layer'"
+                  "Value": "'Audit run'"
                 }
               }
             },
