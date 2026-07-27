@@ -87,9 +87,46 @@ def get_workspace_id(project: Path, name: str) -> str:
 
 
 def get_storage_ids(project: Path, name: str) -> dict[str, str]:
-    """Provisioned storage item ids for an environment, keyed by item name."""
+    """Storage item ids for an environment, keyed by item name.
+
+    Prefers what the spec records, and falls back to asking the workspace.
+
+    The fallback is not a nicety. `provisioned_items` is written when an
+    environment is first built, and for a long time only dev had it -- qa, uat
+    and prod were provisioned but never recorded. Every caller of this function
+    would then have got an empty map and gone looking for a lakehouse id that
+    was sitting in the workspace all along: OneLake uploads, migrations, the DQ
+    monitor and reset would each have failed on the first promotion, for a
+    reason that reads like a missing item rather than a missing note about one.
+
+    Item ids are a property of the workspace, so the workspace is the
+    authority. The recorded map stays as a fast path and an audit record.
+    """
     environment = get_environment(project, name)
-    return (environment.get("provisioned_items") or {}).get("storage") or {}
+    recorded = (environment.get("provisioned_items") or {}).get("storage") or {}
+    if recorded:
+        return recorded
+
+    workspace = environment.get("workspace_id")
+    if not workspace:
+        return {}
+
+    # Imported here so reading a spec does not require network access or an
+    # auth library -- only the fallback does.
+    import requests
+
+    import _tsql
+
+    token = _tsql.credential().get_token(_tsql.FABRIC_SCOPE).token
+    response = requests.get(
+        f"https://api.fabric.microsoft.com/v1/workspaces/{workspace}/items",
+        headers={"Authorization": f"Bearer {token}"}, timeout=90)
+    if not response.ok:
+        return {}
+
+    return {item["displayName"]: item["id"]
+            for item in response.json().get("value", [])
+            if item["type"] in ("Lakehouse", "Warehouse")}
 
 
 def is_production(project: Path, name: str) -> bool:
