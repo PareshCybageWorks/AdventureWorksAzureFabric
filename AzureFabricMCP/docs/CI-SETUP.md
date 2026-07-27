@@ -53,7 +53,7 @@ Two things, and the second is the one people miss.
 | Environment | Workspace | Id | Role |
 |---|---|---|---|
 | dev  | AgenticAIDemo_dev | `13c508c8-8fe8-4539-9cf4-2b4a3b91b32f` | Admin |
-| qa   | AgenticAIDemo_qa  | `ca418d16-23ac-41ab-b892-eaa1cd04e268` | Admin |
+| qa   | AgenticAIDemo_qa  | `a07d5fde-5fa5-4978-8c78-295571b43776` | Admin |
 | uat  | AgenticAIDemo_uat | `08f3d907-80fa-4e86-adfb-ef7d7e5fc34e` | Admin |
 | prod | AgenticAIDemo     | `00e8f132-21d1-41ed-bbfc-ad3a223cf714` | Admin |
 

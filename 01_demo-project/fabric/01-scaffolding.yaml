@@ -105,7 +105,7 @@ environments:
   - name: qa
     branch: qa
     workspace: AgenticAIDemo_qa
-    workspace_id: ca418d16-23ac-41ab-b892-eaa1cd04e268
+    workspace_id: a07d5fde-5fa5-4978-8c78-295571b43776
     capacity_sku: FTL64
 
   - name: uat
