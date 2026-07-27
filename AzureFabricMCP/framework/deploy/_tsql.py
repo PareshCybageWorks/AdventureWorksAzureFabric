@@ -24,6 +24,7 @@ import base64
 import json
 import os
 import time
+import uuid
 
 import requests
 
@@ -202,7 +203,11 @@ def run(*, fabric_token: str, storage_token: str, workspace: str,
             .replace("__DATABASE__", warehouse)
             .replace("__REPORT__", report_file))
 
-    name = f"_nb_{label}_tmp"
+    # Unique per run. A fixed name is deleted at the end of each run and Fabric
+    # then reserves it, so two runs in quick succession collide with
+    # ItemDisplayNameNotAvailableYet -- the second one failing for a reason
+    # that has nothing to do with what it was asked to do.
+    name = f"_nb_{label}_{uuid.uuid4().hex[:8]}"
     notebook = {
         "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
                    "outputs": [], "source": code.splitlines(keepends=True)}],

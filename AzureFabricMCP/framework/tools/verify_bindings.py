@@ -41,6 +41,8 @@ import _tsql  # noqa: E402
 FABRIC_API = "https://api.fabric.microsoft.com/v1"
 GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 PLACEHOLDER = re.compile(r"@@[^@]+@@")
+# Fabric SQL endpoint hostnames, as they appear in a model's Sql.Database().
+ENDPOINT = re.compile(r"[a-z0-9]+-[a-z0-9]+\.datawarehouse\.fabric\.microsoft\.com")
 
 
 def workspace_guids(headers: dict, workspace: str) -> dict[str, str]:
@@ -123,8 +125,26 @@ def main() -> int:
         print(f"comparing against {args.compare} ({len(foreign)} ids that must not appear)")
     print()
 
+    # The semantic model's data source is a SQL ENDPOINT, not a guid, so the
+    # guid comparison below cannot see it. A model left pointing at another
+    # environment's warehouse reports and refreshes perfectly -- against the
+    # wrong data -- which is the least visible failure in the whole chain.
+    warehouses = _tsql.with_retry(
+        "GET", f"{FABRIC_API}/workspaces/{workspace}/warehouses",
+        headers=headers, timeout=90).json().get("value", [])
+    endpoints = {(w.get("properties") or {}).get("connectionString")
+                 for w in warehouses} - {None}
+    foreign_endpoints: set[str] = set()
+    if args.compare:
+        other_wh = _tsql.with_retry(
+            "GET", f"{FABRIC_API}/workspaces/{get_workspace_id(project, args.compare)}"
+                   f"/warehouses", headers=headers, timeout=90).json().get("value", [])
+        foreign_endpoints = {(w.get("properties") or {}).get("connectionString")
+                             for w in other_wh} - {None} - endpoints
+
     checked = problems = 0
-    for kind, collection in (("Notebook", "notebooks"), ("DataPipeline", "dataPipelines")):
+    for kind, collection in (("Notebook", "notebooks"), ("DataPipeline", "dataPipelines"),
+                             ("SemanticModel", "semanticModels"), ("Report", "reports")):
         for name, text in sorted(definitions(headers, workspace, kind, collection).items()):
             checked += 1
             issues = []
@@ -132,6 +152,16 @@ def main() -> int:
             left = set(PLACEHOLDER.findall(text))
             if left:
                 issues.append(f"unresolved placeholder(s): {sorted(left)}")
+
+            for host in set(ENDPOINT.findall(text)):
+                if host in endpoints:
+                    continue
+                if host in foreign_endpoints:
+                    issues.append(f"data source points at {args.compare}'s "
+                                  f"warehouse: {host[:44]}...")
+                else:
+                    issues.append(f"data source is not a warehouse in this "
+                                  f"workspace: {host[:44]}...")
 
             for guid in set(GUID.findall(text)):
                 if guid in mine:
