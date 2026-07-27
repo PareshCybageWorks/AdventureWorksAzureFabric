@@ -110,6 +110,75 @@ def create(headers: dict, workspace: str, kind: str, name: str) -> tuple[bool, s
     return False, f"HTTP {response.status_code}: {response.text[:200]}"
 
 
+def provision_folders(headers: dict, workspace: str, scaffolding: dict,
+                      dry_run: bool) -> int:
+    """Create the workspace folders the spec declares, parents before children.
+
+    organise_items.py files items into these but deliberately does not create
+    them -- conjuring a folder because a pattern matched nothing would paper
+    over a spec error. Nothing else created them either, so dev's were made by
+    hand and a fresh workspace had none at all: every placement would report
+    "folder missing" and every item would stay at the root.
+
+    Idempotent. An existing folder is left alone.
+    """
+    declared = scaffolding.get("workspace_folders") or []
+    if not declared:
+        return 0
+
+    response = _tsql.with_retry("GET", f"{FABRIC_API}/workspaces/{workspace}/folders",
+                                headers=headers, timeout=90)
+    existing = {f["displayName"]: f["id"] for f in response.json().get("value", [])
+                if not f.get("parentFolderId")}
+    # Child names repeat -- there is a `notebook` folder under each layer -- so
+    # they are keyed by parent.
+    children = {(f.get("parentFolderId"), f["displayName"]): f["id"]
+                for f in response.json().get("value", [])}
+
+    failures = 0
+
+    def create(name: str, parent: str | None) -> str | None:
+        body: dict = {"displayName": name}
+        if parent:
+            body["parentFolderId"] = parent
+        made = _tsql.with_retry("POST", f"{FABRIC_API}/workspaces/{workspace}/folders",
+                                headers=headers, json=body, timeout=90)
+        if made.status_code in (200, 201):
+            return made.json().get("id")
+        print(f"  FAILED  folder {name}  {made.status_code}: {made.text[:120]}")
+        return None
+
+    for folder in declared:
+        name = folder["name"]
+        parent_id = existing.get(name)
+        if parent_id:
+            print(f"  exists  folder       {name}")
+        elif dry_run:
+            print(f"  create  folder       {name}")
+            parent_id = None
+        else:
+            parent_id = create(name, None)
+            failures += parent_id is None
+            if parent_id:
+                print(f"  CREATED folder       {name}")
+
+        for sub in folder.get("subfolders") or []:
+            label = f"{name}/{sub['name']}"
+            if parent_id and (parent_id, sub["name"]) in children:
+                print(f"  exists  folder       {label}")
+                continue
+            if dry_run:
+                print(f"  create  folder       {label}")
+                continue
+            if not parent_id:
+                print(f"  SKIPPED folder       {label} (parent not created)")
+                failures += 1
+                continue
+            failures += create(sub["name"], parent_id) is None
+
+    return failures
+
+
 def provision(headers: dict, project: Path, env: str, dry_run: bool) -> int:
     environment = get_environment(project, env)
     workspace = get_workspace_id(project, env)
@@ -137,6 +206,8 @@ def provision(headers: dict, project: Path, env: str, dry_run: bool) -> int:
         else:
             print(f"  FAILED  {item_type:<12} {name}  {detail}")
             failures += 1
+
+    failures += provision_folders(headers, workspace, scaffolding, dry_run)
 
     if not dry_run and any(k == "environment" for k, _ in planned):
         print("  note    env_spark has no library yet -- run push_library.py "

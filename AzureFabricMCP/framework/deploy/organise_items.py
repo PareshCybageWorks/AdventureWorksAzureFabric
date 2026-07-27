@@ -35,7 +35,9 @@ import yaml
 
 # Sibling import: deploy scripts are run as files, not as a package.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "generators"))
 from _project import get_environment, get_storage_ids, get_workspace_id
+from _specs import load as load_spec
 
 FABRIC_API = "https://api.fabric.microsoft.com/v1"
 SCOPE = "https://api.fabric.microsoft.com/.default"
@@ -104,8 +106,16 @@ def main() -> int:
     args = parser.parse_args()
 
     project = Path(args.project).resolve()
-    specs = project / "specs"
-    platform = yaml.safe_load((specs / "00-platform.yaml").read_text(encoding="utf-8"))
+
+    # Resolved through _specs, like every other generator and deploy script.
+    #
+    # This read `specs/00-platform.yaml` directly, which is the LEGACY spec.
+    # Both files exist during the migration, so it kept working and kept
+    # reading the stale one -- the authoritative folder taxonomy in
+    # fabric/01-scaffolding.yaml was ignored for as long as the two agreed.
+    # When 6_powerbi was added to the real spec, this filed twenty items,
+    # reported "0 unmatched", and left the four new ones at the workspace root.
+    platform = load_spec(project, "scaffolding")
     try:
         env = get_environment(project, args.env)
         workspace = get_workspace_id(project, args.env)

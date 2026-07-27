@@ -226,6 +226,9 @@ workspace_folders:
       everything downstream depends on.
     contains:
       - { item_type: Environment, name: env_spark }
+      # Cross-layer operational notebook. The monitor reads bronze, silver and
+      # gold, so it belongs to no single layer folder.
+      - { item_type: Notebook, name: nb_dq_monitor }
 
   - name: "1_bronze"
     layer: bronze
@@ -238,7 +241,11 @@ workspace_folders:
     layer: silver
     description: Cleansing. Notebooks run in the dependency order the mapping declares.
     subfolders:
-      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_clean_*" }] }
+      # nb_cascade_quarantine is filed with silver, not with configuration: it
+      # is layer work, run last by p_clean_silver, and it rewrites silver
+      # tables. Named explicitly because it does not match nb_clean_*.
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_clean_*" },
+                                     { item_type: Notebook, name: nb_cascade_quarantine }] }
       - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_clean_silver }] }
 
   - name: "3_gold"
@@ -267,6 +274,22 @@ workspace_folders:
       - { item_type: Lakehouse, name: lh_bronze }
       - { item_type: Lakehouse, name: lh_silver }
       - { item_type: Warehouse, name: wh_gold }
+
+  - name: "6_powerbi"
+    layer: null
+    description: >-
+      The reporting surface: the semantic model and every report bound to it.
+
+      Separate from the layer folders because these are consumed rather than
+      run. Nothing here is orchestrated by a pipeline, and the audience is
+      report authors rather than engineers.
+    subfolders:
+      # Split by item type, the same way each layer folder separates notebook
+      # from pipeline. A model and the reports bound to it change on different
+      # cadences and are edited by different people, so they do not belong in
+      # one drawer.
+      - { name: semanticmodel, contains: [{ item_type: SemanticModel, name_pattern: "sm_*" }] }
+      - { name: report,        contains: [{ item_type: Report, name_pattern: "*" }] }
 
 # -----------------------------------------------------------------------------
 # Audit columns -- injected by the generator, never declared in a mapping
