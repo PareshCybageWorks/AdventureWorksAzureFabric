@@ -109,6 +109,9 @@ jobs:
       - name: notebooks
         run: python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
 
+      - name: notebooks
+        run: python AzureFabricMCP/framework/generators/generate_audit.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+
       - name: generate_workflows.py
         run: python AzureFabricMCP/framework/generators/generate_workflows.py --specs 01_demo-project --out . --check
 

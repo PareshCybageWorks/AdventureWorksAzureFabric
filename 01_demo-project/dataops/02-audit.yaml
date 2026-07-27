@@ -1,0 +1,91 @@
+version: 1
+
+# =============================================================================
+# D2 Data Audit -- commerce
+# =============================================================================
+# Row and value flow from bronze to gold, per entity, written to the warehouse
+# so Power BI reports on it alongside the numbers it audits.
+#
+# This exists because "where did the rows go" was answered three times today by
+# hand: 2,945 order lines vanished into a join, 999 orders were quarantined
+# without their children, and gold was 4.15% short of silver with nothing
+# showing it. Each was found by a different ad-hoc query. This makes the answer
+# a table.
+#
+# Validate: python framework/generators/validate.py --project . --track dataops
+# Generate: python framework/generators/generate_audit.py --specs . --out generated/notebooks
+# =============================================================================
+
+metadata:
+  name: demo-commerce-analytics
+
+target:
+  table: dbo.audit_layer_flow
+  view: bi.vw_layer_audit
+  # Appended, so a slow leak shows as a trend rather than only as today's
+  # number. One row per entity per layer per run.
+  write_mode: append
+
+entities:
+  # ---------------------------------------------------------------------------
+  - name: order_items
+    description: >-
+      The value-bearing entity. Its measure is money at every layer, so the
+      audit shows revenue surviving the pipeline, not just rows.
+    layers:
+      bronze:
+        table: bronze_commerce_order_items
+        measure: subtotal
+      silver:
+        table: stg_order_items
+        measure: subtotal
+        quarantine: stg_order_items_quarantine
+      gold:
+        table: dbo.fct_sales
+        measure: line_revenue
+
+  # ---------------------------------------------------------------------------
+  - name: orders
+    description: >-
+      Header rows. Silver quarantines the ones that fail cleansing, and the
+      cascade then removes their lines -- so this entity and order_items must
+      be read together to explain the line count.
+    layers:
+      bronze:
+        table: bronze_commerce_orders
+        measure: total_price
+      silver:
+        table: stg_orders
+        measure: order_total
+        quarantine: stg_orders_quarantine
+
+  # ---------------------------------------------------------------------------
+  - name: customers
+    # SCD2: gold holds one row per VERSION, so its count legitimately exceeds
+    # silver's. Without this flag the audit would report growth as a fault.
+    grain_changes: true
+    layers:
+      bronze:
+        table: bronze_commerce_customers
+      silver:
+        table: stg_customers
+        quarantine: stg_customers_quarantine
+      gold:
+        table: dbo.dim_customer
+        filter: is_current = true
+
+  # ---------------------------------------------------------------------------
+  - name: products
+    grain_changes: true
+    layers:
+      bronze:
+        table: bronze_commerce_products
+        measure: price
+      silver:
+        table: stg_products
+        measure: list_price
+        quarantine: stg_products_quarantine
+      gold:
+        table: dbo.dim_product
+        measure: list_price
+        filter: is_current = true

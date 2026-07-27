@@ -37,6 +37,7 @@ TRACKS = {
     },
     "dataops": {
         "monitoring": Path("dataops") / "01-monitoring.yaml",
+        "audit":      Path("dataops") / "02-audit.yaml",
     },
     "cicd": {
         "pipeline": Path("cicd") / "01-pipeline.yaml",

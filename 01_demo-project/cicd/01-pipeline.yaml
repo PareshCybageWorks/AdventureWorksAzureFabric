@@ -169,6 +169,7 @@ workflows:
           - python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 01_demo-project --out 01_demo-project/generated/model --check
           - python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
           - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+          - python AzureFabricMCP/framework/generators/generate_audit.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
           - python AzureFabricMCP/framework/generators/generate_workflows.py --specs 01_demo-project --out . --check
           - python AzureFabricMCP/framework/generators/sync_contract_rules.py --check
 

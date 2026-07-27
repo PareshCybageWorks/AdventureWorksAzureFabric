@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://techtonic/contracts/dataops/02-audit.schema.json",
+  "title": "D2 Data Audit",
+  "description": "Row and value flow from bronze to gold, per entity, written to the warehouse so Power BI can report on it. Answers 'where did the rows go' with a number rather than an opinion. AUTHORITATIVE: validation fails the build.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "target", "entities"],
+
+  "properties": {
+    "version": { "const": 1 },
+
+    "metadata": {
+      "type": "object",
+      "properties": { "name": { "type": "string" } }
+    },
+
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table"],
+      "description": "Where the audit lands. The warehouse, not a lakehouse: the semantic model reads DirectLake from there, so an audit written anywhere else could not be reported on alongside the numbers it audits.",
+      "properties": {
+        "table": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+          "description": "Schema-qualified, e.g. dbo.audit_layer_flow."
+        },
+        "view": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+          "description": "Reporting view over the table, e.g. bi.vw_layer_audit."
+        },
+        "write_mode": {
+          "enum": ["append", "overwrite"],
+          "default": "append",
+          "description": "append keeps history, so a shrinking row count is visible as a trend rather than only as today's number. overwrite keeps the latest run only."
+        },
+        "retain_runs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Runs kept when appending. Absent means keep everything."
+        }
+      }
+    },
+
+    "entities": {
+      "type": "array",
+      "minItems": 1,
+      "description": "One per business entity, naming what it is called at each layer so counts are comparable. The whole point is that bronze_commerce_order_items, stg_order_items and dbo.fct_sales are the same thing measured three times.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "layers"],
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "grain_changes": {
+            "type": "boolean",
+            "default": false,
+            "description": "Set where a layer legitimately changes the row count for a reason other than loss -- an SCD2 dimension holds one row per VERSION, so its count exceeds silver's without anything being wrong. Suppresses the shrinkage warning for that entity."
+          },
+          "layers": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 2,
+            "description": "At least two layers, or there is nothing to compare.",
+            "properties": {
+              "bronze": { "$ref": "#/definitions/layer" },
+              "silver": { "$ref": "#/definitions/layer" },
+              "gold": { "$ref": "#/definitions/layer" }
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+    "layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table"],
+      "properties": {
+        "table": {
+          "type": "string",
+          "description": "Unqualified for a lakehouse table; schema-qualified for a warehouse one."
+        },
+        "measure": {
+          "type": "string",
+          "description": "Money or quantity column summed alongside the row count. A count alone hides value moving without rows moving -- a corrected subtotal changes the total while every row survives."
+        },
+        "filter": {
+          "type": "string",
+          "description": "Spark SQL predicate applied before counting, e.g. is_current = true for the current slice of an SCD2 dimension."
+        },
+        "quarantine": {
+          "type": "string",
+          "description": "Table holding rows this layer rejected. Counted separately so kept + rejected can be reconciled against the layer above, which is what turns an unexplained drop into an explained one."
+        }
+      }
+    }
+  }
+}

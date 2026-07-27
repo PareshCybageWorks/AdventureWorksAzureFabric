@@ -149,7 +149,7 @@ def build_silver(platform: dict, silver: dict) -> dict:
     return wrap(activities)
 
 
-def build_gold(platform: dict, gold: dict) -> dict:
+def build_gold(platform: dict, gold: dict, audit: dict | None = None) -> dict:
     verb = platform["naming"]["verbs"]["gold"]
     template = platform["naming"]["notebook"]
 
@@ -179,6 +179,14 @@ def build_gold(platform: dict, gold: dict) -> dict:
     if gold.get("views"):
         activities.append(notebook_activity(
             "nb_build_bi_views", dimension_names + fact_names))
+
+    # The audit measures every layer, so it runs once everything it measures
+    # has been written -- including the views, since it reports beside them.
+    if audit and audit.get("entities"):
+        upstream = dimension_names + fact_names
+        if gold.get("views"):
+            upstream = upstream + ["nb_build_bi_views"]
+        activities.append(notebook_activity("nb_build_audit", upstream))
 
     return wrap(activities)
 
@@ -210,12 +218,16 @@ def main() -> int:
     sources = load_spec(specs, "sources")
     silver = load_spec(specs, "silver")
     gold = load_spec(specs, "gold")
+    try:
+        audit = load_spec(specs, "audit", track="dataops")
+    except (FileNotFoundError, KeyError):
+        audit = None          # the audit stage is optional
 
     names = platform["naming"]["pipelines"]
     planned = {
         out / f"{names['bronze']}.json": render(build_bronze(platform, sources)),
         out / f"{names['silver']}.json": render(build_silver(platform, silver)),
-        out / f"{names['gold']}.json": render(build_gold(platform, gold)),
+        out / f"{names['gold']}.json": render(build_gold(platform, gold, audit)),
         out / f"{names['master']}.json": render(build_master(platform)),
     }
 
