@@ -105,5 +105,11 @@ jobs:
       - name: reports
         run: python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
 
+      - name: notebooks
+        run: python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+
+      - name: generate_workflows.py
+        run: python AzureFabricMCP/framework/generators/generate_workflows.py --specs 01_demo-project --out . --check
+
       - name: sync_contract_rules.py
         run: python AzureFabricMCP/framework/generators/sync_contract_rules.py --check

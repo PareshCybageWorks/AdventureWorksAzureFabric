@@ -177,12 +177,12 @@ from ttfabric.monitoring import (
     run_expectations, evaluate_slas, FAIL, ERROR, WARN,
 )
 
-# Set by the pipeline; defaults to dev so a manual run is never the strict one.
-environment = "dev"
+# `env` comes from the parameters cell above, overridden at run time by the
+# pipeline or by tools/run_monitor.py.
 try:
     environment = str(env).strip() or "dev"      # noqa: F821  (notebook parameter)
 except NameError:
-    pass
+    environment = "dev"
 
 EXPECTATIONS = {pprint.pformat(expectations, width=88, sort_dicts=False)}
 
@@ -346,8 +346,23 @@ def main() -> int:
     lakehouses = [name for kind, name in storage.values() if kind == "lakehouse"]
     lakehouses = list(dict.fromkeys([default_lakehouse] + lakehouses))
 
+    # A cell tagged "parameters" is where Fabric injects run parameters. Without
+    # the tag, executionData.parameters are accepted by the API and silently
+    # ignored -- so the monitor would apply dev's policy in every environment
+    # while appearing to be told otherwise.
+    parameter_cell = {
+        "cell_type": "code", "execution_count": None,
+        "metadata": {"tags": ["parameters"]}, "outputs": [],
+        "source": [
+            "# Injected by the pipeline or CI. Defaults to dev so a manual run\n",
+            "# is never the strict one.\n",
+            'env = "dev"\n',
+        ],
+    }
+
     document = {
-        "cells": [{"cell_type": "code", "execution_count": None, "metadata": {},
+        "cells": [parameter_cell,
+                  {"cell_type": "code", "execution_count": None, "metadata": {},
                    "outputs": [], "source": source.splitlines(keepends=True)}],
         "metadata": {
             "dependencies": {

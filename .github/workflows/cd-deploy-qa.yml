@@ -68,6 +68,37 @@ jobs:
       - name: push_reports.py
         run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
 
+  dq-gate:
+    # Runs the DQ monitor in qa and fails on any breach at a severity qa blocks
+    # on. This is the gate the spec has always declared; until run_monitor.py
+    # existed nothing enforced it. The script reads the results back and prints
+    # which check, on which table, measured what -- because a failed Fabric
+    # notebook reports only "session failed", and a gate nobody can read is a
+    # gate nobody trusts.
+    runs-on: ubuntu-latest
+    if: vars.FABRIC_DEPLOY_ENABLED == 'true'
+    environment: qa
+    needs: [deploy]
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r framework/requirements.txt
+
+      - name: run_monitor.py
+        run: python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env qa
+
   verify:
     # The model has to answer, not merely deploy. A DirectLake model with a
     # relationship on the wrong column publishes cleanly and returns blank.

@@ -110,13 +110,71 @@ def credential():
 
 
 def warehouse_endpoint(headers: dict, workspace: str, name: str) -> str | None:
+    """SQL endpoint for a warehouse OR a lakehouse of this name.
+
+    A lakehouse exposes a read-only SQL endpoint over its Delta tables, and it
+    is the only way to query silver from outside Spark -- which is where the DQ
+    results land. Falling back to it here means callers name an item without
+    having to know which kind it is.
+
+    Note the endpoint lags: a table written by Spark appears in OneLake at once
+    but takes a minute or two to become visible through SQL. An "Invalid object
+    name" on a table you just wrote is usually that, not a failed write.
+    """
     response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/warehouses",
                             headers=headers, timeout=60)
     warehouse = next((w for w in response.json().get("value", [])
                       if w["displayName"] == name), None)
-    if warehouse is None:
+    if warehouse is not None:
+        return (warehouse.get("properties") or {}).get("connectionString")
+
+    response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/lakehouses",
+                            headers=headers, timeout=60)
+    lakehouse = next((l for l in response.json().get("value", [])
+                      if l["displayName"] == name), None)
+    if lakehouse is None:
         return None
-    return (warehouse.get("properties") or {}).get("connectionString")
+    return (((lakehouse.get("properties") or {})
+             .get("sqlEndpointProperties") or {}).get("connectionString"))
+
+
+def run_notebook(headers: dict, workspace: str, name: str,
+                 parameters: dict | None = None,
+                 timeout_minutes: int = 25) -> tuple[str, str]:
+    """Run a notebook by display name. Returns (status, notebook id).
+
+    Fabric reports only a coarse status for a notebook run -- never the
+    statement that failed. Anything needing a diagnosis has the notebook write
+    its own outcome somewhere readable.
+    """
+    items = requests.get(f"{FABRIC_API}/workspaces/{workspace}/items?type=Notebook",
+                         headers=headers, timeout=60).json().get("value", [])
+    notebook = next((i for i in items if i["displayName"] == name), None)
+    if notebook is None:
+        return "NotFound", ""
+
+    body: dict = {}
+    if parameters:
+        body["executionData"] = {
+            "parameters": {k: {"value": v, "type": "string"}
+                           for k, v in parameters.items()}}
+
+    started = with_retry(
+        "POST", f"{FABRIC_API}/workspaces/{workspace}/items/{notebook['id']}"
+                f"/jobs/instances?jobType=RunNotebook",
+        headers=headers, json=body, timeout=60)
+    location = started.headers.get("Location")
+    if not location:
+        return f"NotStarted (HTTP {started.status_code})", notebook["id"]
+
+    status = None
+    for _ in range(timeout_minutes * 4):
+        time.sleep(15)
+        status = with_retry("GET", location, headers=headers,
+                            timeout=60).json().get("status")
+        if status in ("Completed", "Failed", "Cancelled"):
+            return status, notebook["id"]
+    return f"TimedOut after {timeout_minutes}m", notebook["id"]
 
 
 def run(*, fabric_token: str, storage_token: str, workspace: str,

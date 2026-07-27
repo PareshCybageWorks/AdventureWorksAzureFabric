@@ -9,18 +9,28 @@ Until step 5 is done, **deploy jobs skip rather than fail**. `ci-validate` and
 
 ---
 
-## 1. Create a service principal
+## 1. Service principal — already exists
 
-The deploy scripts prefer a service principal and fall back to your `az login`
-session, so nothing in the framework needs a CI-specific branch.
+`AzureFabric_MCP` is the principal to use. The deploy scripts prefer a service
+principal and fall back to your `az login` session, so nothing in the framework
+needs a CI-specific branch.
+
+| | |
+|---|---|
+| Display name | `AzureFabric_MCP` |
+| Application (client) id | `cd353f61-2c49-4ecb-b9ab-731f5390b8ec` |
+| Object id | `275acfcb-d133-4840-90a4-7545136ecb75` |
+| Tenant id | `37709cfb-f3b2-4648-aea1-9c828a886147` |
+
+You need a **client secret** for it. If you do not have one to hand, create a
+new one — an existing secret cannot be read back:
 
 ```bash
-az ad sp create-for-rbac --name "fabric-cicd-agenticaidemo"
+az ad app credential reset --id cd353f61-2c49-4ecb-b9ab-731f5390b8ec   --display-name "github-actions" --years 1
 ```
 
-Keep the output. `appId`, `password` and `tenant` become the three secrets in
-step 3. **The password is shown once** — if you lose it, reset the credential
-rather than trying to recover it.
+That prints the secret **once**. Copy it straight into the GitHub secret in
+step 3; do not paste it into a file in this repository.
 
 ---
 
@@ -28,15 +38,18 @@ rather than trying to recover it.
 
 Two things, and the second is the one people miss.
 
-**a. Workspace access.** The principal needs **Contributor** on each workspace
-it deploys to (Admin if it must also create items):
+**a. Workspace access — already granted.** Verified on all four:
 
-| Environment | Workspace | Id |
-|---|---|---|
-| dev  | AgenticAIDemo_dev | `13c508c8-8fe8-4539-9cf4-2b4a3b91b32f` |
-| qa   | AgenticAIDemo_qa  | `ca418d16-23ac-41ab-b892-eaa1cd04e268` |
-| uat  | AgenticAIDemo_uat | `08f3d907-80fa-4e86-adfb-ef7d7e5fc34e` |
-| prod | AgenticAIDemo     | `00e8f132-21d1-41ed-bbfc-ad3a223cf714` |
+| Environment | Workspace | Id | Role |
+|---|---|---|---|
+| dev  | AgenticAIDemo_dev | `13c508c8-8fe8-4539-9cf4-2b4a3b91b32f` | Admin |
+| qa   | AgenticAIDemo_qa  | `ca418d16-23ac-41ab-b892-eaa1cd04e268` | Admin |
+| uat  | AgenticAIDemo_uat | `08f3d907-80fa-4e86-adfb-ef7d7e5fc34e` | Contributor |
+| prod | AgenticAIDemo     | `00e8f132-21d1-41ed-bbfc-ad3a223cf714` | Admin |
+
+Contributor is sufficient for everything the framework does — create items,
+deploy, run notebooks. The three Admin grants are historical rather than
+required, and could be reduced.
 
 **b. The tenant setting.** In the Fabric admin portal, enable
 **"Service principals can use Fabric APIs"** and include a security group
@@ -54,9 +67,9 @@ checking workspace permissions that were correct the whole time.
 
 | Secret | Value |
 |---|---|
-| `AZURE_CLIENT_ID` | the `appId` from step 1 |
-| `AZURE_CLIENT_SECRET` | the `password` from step 1 |
-| `AZURE_TENANT_ID` | the `tenant` from step 1 |
+| `AZURE_CLIENT_ID` | `cd353f61-2c49-4ecb-b9ab-731f5390b8ec` |
+| `AZURE_CLIENT_SECRET` | the secret from step 1 |
+| `AZURE_TENANT_ID` | `37709cfb-f3b2-4648-aea1-9c828a886147` |
 
 Add them at the **repository** level, or per Environment if you want prod to
 use a different principal — which is worth doing if prod is a separate tenant
@@ -127,9 +140,23 @@ principal is configured correctly. If it fails on authorisation, revisit step
 
 ---
 
-## What still is not enforced
+## The data-quality gate
 
-`dq-gate` is declared automated and blocks uat and prod, but no job implements
-it, so nothing enforces it today. Closing that needs a runner that triggers
-`nb_dq_monitor` and fails on error/critical breaches. Until then, treat the
-data-quality gate as documentation rather than a control.
+`dq-gate` is now enforced. `cd-deploy-qa` runs `tools/run_monitor.py`, which
+executes `nb_dq_monitor` in the target workspace, reads the results back, and
+fails on any breach at a severity that environment blocks on.
+
+It prints which check, on which table, measured what — because a failed Fabric
+notebook reports only "session failed", and a gate nobody can read is a gate
+nobody trusts.
+
+**It will currently fail a qa deploy.** `GD-SALES-005` is severity `critical`
+and erroring, and qa blocks on `error` and `critical`. That is the gate working:
+the check is a cross-table reconciliation that `arithmetic_consistency` cannot
+evaluate, and it needs a `reconciliation` rule before qa can go green.
+
+To see the position without blocking a deploy:
+
+```bash
+python AzureFabricMCP/framework/tools/run_monitor.py   --project 01_demo-project --env qa --report-only
+```

@@ -135,6 +135,8 @@ workflows:
           - python AzureFabricMCP/framework/generators/generate_ddl.py --specs 01_demo-project --out 01_demo-project/generated/migrations --check
           - python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 01_demo-project --out 01_demo-project/generated/model --check
           - python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
+          - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+          - python AzureFabricMCP/framework/generators/generate_workflows.py --specs 01_demo-project --out . --check
           - python AzureFabricMCP/framework/generators/sync_contract_rules.py --check
 
   # ---------------------------------------------------------------------------
@@ -178,6 +180,20 @@ workflows:
           - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
+
+      - id: dq-gate
+        environment: qa
+        needs: [deploy]
+        description: >-
+          Runs the DQ monitor in qa and fails on any breach at a severity qa
+          blocks on. This is the gate the spec has always declared; until
+          run_monitor.py existed nothing enforced it.
+
+          The script reads the results back and prints which check, on which
+          table, measured what -- because a failed Fabric notebook reports only
+          "session failed", and a gate nobody can read is a gate nobody trusts.
+        steps:
+          - python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env qa
 
       - id: verify
         environment: qa
@@ -224,11 +240,14 @@ workflows:
       workflow_dispatch: {}
     jobs:
       - id: monitor
-        # No environment: this only checks that the generated notebook matches
-        # the spec, which needs no credentials. It becomes a real monitoring
-        # run -- and will need an environment -- once dq-gate is implemented.
+        environment: prod
+        description: >-
+          Runs the monitor against production and reports. --report-only: a
+          scheduled run finding drift should raise the alarm, not fail a build
+          nobody triggered. Blocking belongs on the deployment path, where
+          somebody is waiting for an answer.
         steps:
-          - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+          - python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env prod --report-only
 
 gates:
   - id: validate
