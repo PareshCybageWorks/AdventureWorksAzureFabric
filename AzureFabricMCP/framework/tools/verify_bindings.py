@@ -28,6 +28,7 @@ import argparse
 import base64
 import json
 import re
+import time
 import sys
 from pathlib import Path
 
@@ -63,7 +64,30 @@ def definitions(headers: dict, workspace: str, kind: str, collection: str) -> di
                     f"/getDefinition", headers=headers, timeout=180)
         if not response.ok:
             continue
-        parts = response.json().get("definition", {}).get("parts", [])
+
+        # getDefinition is long-running: 202 returns no body, only a Location
+        # to poll and then a separate result URL. Reading .json() straight off
+        # the 202 gets None.
+        payload = None
+        if response.status_code == 202:
+            location = response.headers.get("Location")
+            for _ in range(40):
+                time.sleep(3)
+                poll = _tsql.with_retry("GET", location, headers=headers, timeout=90)
+                state = poll.json().get("status") if poll.content else None
+                if state == "Succeeded":
+                    result = _tsql.with_retry("GET", f"{location}/result",
+                                              headers=headers, timeout=180)
+                    payload = result.json() if result.ok and result.content else None
+                    break
+                if state == "Failed":
+                    break
+        elif response.content:
+            payload = response.json()
+
+        if not payload:
+            continue
+        parts = (payload.get("definition") or {}).get("parts", [])
         text = ""
         for part in parts:
             if part.get("payloadType") == "InlineBase64":
