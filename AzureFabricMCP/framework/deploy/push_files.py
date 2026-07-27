@@ -40,6 +40,7 @@ import yaml
 # Sibling import: deploy scripts are run as files, not as a package.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _project import get_environment, get_storage_ids, get_workspace_id
+import _tsql
 
 ONELAKE = "https://onelake.dfs.fabric.microsoft.com"
 STORAGE_SCOPE = "https://storage.azure.com/.default"
@@ -83,20 +84,21 @@ class OneLake:
 
         url = f"{ONELAKE}/{self.workspace}/{item_id}/{path}"
 
-        created = requests.put(url, headers=self.headers,
-                               params={"resource": "file"}, timeout=120)
+        created = _tsql.with_retry("PUT", url, headers=self.headers,
+                                   params={"resource": "file"}, timeout=120)
         if created.status_code not in (201, 202):
             print(f"      create failed {created.status_code}: {created.text[:200]}")
             return False
 
-        appended = requests.patch(
-            url, headers={**self.headers, "Content-Type": "application/octet-stream"},
+        appended = _tsql.with_retry(
+            "PATCH", url,
+            headers={**self.headers, "Content-Type": "application/octet-stream"},
             params={"action": "append", "position": "0"}, data=data, timeout=300)
         if appended.status_code not in (200, 202):
             print(f"      append failed {appended.status_code}: {appended.text[:200]}")
             return False
 
-        flushed = requests.patch(url, headers=self.headers,
+        flushed = _tsql.with_retry("PATCH", url, headers=self.headers,
                                  params={"action": "flush", "position": str(len(data))},
                                  timeout=120)
         if flushed.status_code not in (200, 201):

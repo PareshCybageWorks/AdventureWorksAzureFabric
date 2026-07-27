@@ -23,6 +23,10 @@ concurrency:
 
 jobs:
   deploy:
+    # organise_items runs LAST, after the semantic model and reports exist. It
+    # filed only what was present when it ran, so with it in the middle every
+    # Power BI item stayed at the workspace root -- and reported success,
+    # because nothing it knew about was misplaced.
     runs-on: ubuntu-latest
     if: vars.FABRIC_DEPLOY_ENABLED == 'true'
     environment: dev
@@ -55,9 +59,6 @@ jobs:
       - name: push_items.py
         run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env dev --create-missing
 
-      - name: organise_items.py
-        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev
-
       - name: run_migrations.py
         run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env dev
 
@@ -66,3 +67,6 @@ jobs:
 
       - name: push_reports.py
         run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env dev
+
+      - name: organise_items.py
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev

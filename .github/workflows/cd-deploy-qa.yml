@@ -56,9 +56,6 @@ jobs:
       - name: push_items.py
         run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
 
-      - name: organise_items.py
-        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
-
       - name: run_migrations.py
         run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
 
@@ -67,6 +64,9 @@ jobs:
 
       - name: push_reports.py
         run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
+
+      - name: organise_items.py
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
 
   dq-gate:
     # Runs the DQ monitor in qa and fails on any breach at a severity qa blocks

@@ -182,15 +182,20 @@ workflows:
     jobs:
       - id: deploy
         environment: dev
+        description: >-
+          organise_items runs LAST, after the semantic model and reports exist.
+          It filed only what was present when it ran, so with it in the middle
+          every Power BI item stayed at the workspace root -- and reported
+          success, because nothing it knew about was misplaced.
         steps:
           - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env dev
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env dev --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env dev --create-missing
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev
           - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env dev
           - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env dev
           - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env dev
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev
 
   # ---------------------------------------------------------------------------
   - name: cd-deploy-qa
@@ -209,10 +214,10 @@ workflows:
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
 
       - id: dq-gate
         environment: qa
@@ -258,10 +263,10 @@ workflows:
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env uat
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env uat --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env uat --create-missing
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
           - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env uat
           - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env uat
           - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
 
       - id: dq-gate
         environment: uat
@@ -287,10 +292,10 @@ workflows:
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env prod
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env prod --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env prod --create-missing
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env prod
           - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env prod
           - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env prod
           - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env prod
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env prod
 
   # ---------------------------------------------------------------------------
   - name: ops-monitor

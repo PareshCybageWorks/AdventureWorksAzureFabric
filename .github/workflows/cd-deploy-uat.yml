@@ -59,9 +59,6 @@ jobs:
       - name: push_items.py
         run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env uat --create-missing
 
-      - name: organise_items.py
-        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
-
       - name: run_migrations.py
         run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env uat
 
@@ -70,6 +67,9 @@ jobs:
 
       - name: push_reports.py
         run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env uat
+
+      - name: organise_items.py
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
 
   dq-gate:
     runs-on: ubuntu-latest

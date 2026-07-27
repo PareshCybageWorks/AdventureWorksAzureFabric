@@ -86,11 +86,29 @@ def existing(headers: dict, workspace: str) -> dict[tuple[str, str], str]:
     return found
 
 
-def create(headers: dict, workspace: str, kind: str, name: str) -> tuple[bool, str]:
+def create(headers: dict, workspace: str, kind: str, name: str,
+           name_wait_attempts: int = 10, name_wait_seconds: int = 30) -> tuple[bool, str]:
     item_type, collection = ITEM_TYPES[kind]
-    response = _tsql.with_retry(
-        "POST", f"{FABRIC_API}/workspaces/{workspace}/{collection}",
-        headers=headers, json={"displayName": name}, timeout=180)
+
+    for attempt in range(1, name_wait_attempts + 1):
+        response = _tsql.with_retry(
+            "POST", f"{FABRIC_API}/workspaces/{workspace}/{collection}",
+            headers=headers, json={"displayName": name}, timeout=180)
+
+        # Fabric reserves the name of a DELETED item for a while before it can
+        # be reused. Clearing a workspace and immediately rebuilding it -- the
+        # obvious way to reset for a demo -- therefore fails on every item,
+        # with an error that reads like a naming conflict rather than a wait.
+        if response.status_code == 409 and "NotAvailableYet" in response.text:
+            if attempt == name_wait_attempts:
+                return False, (f"name still reserved from a recent delete after "
+                               f"{name_wait_attempts * name_wait_seconds}s. Fabric "
+                               f"releases it on its own schedule; try again later.")
+            print(f"    {name}: name still held from a recent delete, "
+                  f"waiting {name_wait_seconds}s ({attempt}/{name_wait_attempts})")
+            time.sleep(name_wait_seconds)
+            continue
+        break
 
     if response.status_code in (200, 201):
         return True, response.json().get("id", "")
@@ -174,7 +192,9 @@ def provision_folders(headers: dict, workspace: str, scaffolding: dict,
                 print(f"  SKIPPED folder       {label} (parent not created)")
                 failures += 1
                 continue
-            failures += create(sub["name"], parent_id) is None
+            made = create(sub["name"], parent_id)
+            print(f"  {'CREATED' if made else 'FAILED '} folder       {label}")
+            failures += made is None
 
     return failures
 
