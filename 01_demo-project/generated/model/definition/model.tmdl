@@ -11,6 +11,7 @@ ref table Sales
 ref table Customer
 ref table Product
 ref table Date
+ref table Audit
 
 ref expression DatabaseQuery
 

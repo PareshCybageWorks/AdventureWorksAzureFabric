@@ -195,6 +195,60 @@ tables:
       - source: fiscal_quarter
         name: Fiscal Quarter
 
+  # ---------------------------------------------------------------------------
+  - name: Audit
+    source_table: dbo.audit_layer_flow
+    kind: fact
+    description: >-
+      Row and value flow from bronze to gold, one row per entity per layer per
+      run. Deliberately UNRELATED to the star schema: it describes the pipeline,
+      not the business, and joining it to Date or Customer would let someone
+      slice an audit by a dimension that had itself been filtered.
+
+      Types are declared here because this table is not in the gold mapping --
+      it is operational, not dimensional.
+    columns:
+      - source: run_id
+        name: Run
+        type: string
+      - source: entity
+        name: Entity
+        type: string
+      - source: layer
+        name: Layer
+        type: string
+      - source: table_name
+        name: Table
+        type: string
+      - source: row_count
+        name: Row Count
+        type: int64
+        format: "#,0"
+        hidden: true
+      - source: measure_value
+        name: Measure Value
+        type: double
+        format: "\"₹\"#,0.00"
+        hidden: true
+      - source: rejected_count
+        name: Rejected Count
+        type: int64
+        format: "#,0"
+        hidden: true
+      - source: grain_changes
+        name: Grain Changes
+        type: boolean
+        description: >-
+          True where a layer legitimately changes the row count -- an SCD2
+          dimension holds one row per version, so gold exceeding silver is
+          correct rather than a loss.
+      - source: error
+        name: Error
+        type: string
+      - source: measured_at
+        name: Measured At
+        type: dateTime
+
 relationships:
   - from_table: Sales
     from_column: customer_sk
@@ -359,3 +413,70 @@ measures:
     format: "0.00%"
     display_folder: Data Quality
     description: Share of order lines whose subtotal silver had to recompute.
+
+  # --- Data audit -----------------------------------------------------------
+  # The audit table APPENDS one row set per run, so a plain SUM across every
+  # run double counts. These scope to the newest run unless one is selected.
+  - name: Latest Audit Run
+    table: Audit
+    expression: CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+    display_folder: Data Audit
+    description: The most recent audit run in the current selection.
+
+  - name: Rows
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      RETURN CALCULATE(SUM(Audit[Row Count]), Audit[Run] = latest)
+    format: "#,0"
+    display_folder: Data Audit
+    description: >-
+      Rows present at a layer on the latest run. Scoped to one run on purpose:
+      the audit appends, so summing every run would report the pipeline as
+      having processed its history over again.
+
+  - name: Value
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      RETURN CALCULATE(SUM(Audit[Measure Value]), Audit[Run] = latest)
+    format: "\"₹\"#,0"
+    display_folder: Data Audit
+    description: Money surviving to a layer. A count alone hides value moving without rows moving.
+
+  - name: Rejected
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      RETURN CALCULATE(SUM(Audit[Rejected Count]), Audit[Run] = latest)
+    format: "#,0"
+    display_folder: Data Audit
+    description: Rows the layer quarantined. What turns an unexplained drop into an explained one.
+
+  - name: Rows Lost From Bronze
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      VAR bronze =
+          CALCULATE(SUM(Audit[Row Count]),
+                    Audit[Run] = latest, Audit[Layer] = "bronze",
+                    ALLSELECTED(Audit[Layer]))
+      RETURN bronze - [Rows]
+    format: "#,0"
+    display_folder: Data Audit
+    description: >-
+      Rows this layer holds fewer than bronze did. Negative where the grain
+      legitimately changes -- an SCD2 dimension carries one row per version.
+
+  - name: Retention %
+    table: Audit
+    expression: |-
+      VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+      VAR bronze =
+          CALCULATE(SUM(Audit[Row Count]),
+                    Audit[Run] = latest, Audit[Layer] = "bronze",
+                    ALLSELECTED(Audit[Layer]))
+      RETURN DIVIDE([Rows], bronze)
+    format: "0.0%"
+    display_folder: Data Audit
+    description: Share of bronze rows still present at this layer.

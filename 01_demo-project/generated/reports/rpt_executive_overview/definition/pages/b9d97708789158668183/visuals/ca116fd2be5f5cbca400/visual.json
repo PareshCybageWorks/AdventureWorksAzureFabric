@@ -1,0 +1,93 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "ca116fd2be5f5cbca400",
+  "position": {
+    "x": 20,
+    "y": 150,
+    "width": 620,
+    "height": 290,
+    "z": 1005,
+    "tabOrder": 1005
+  },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "drillFilterOtherVisuals": true,
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Layer"
+                }
+              },
+              "queryRef": "Audit.Layer"
+            }
+          ]
+        },
+        "Series": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Entity"
+                }
+              },
+              "queryRef": "Audit.Entity"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Rows"
+                }
+              },
+              "queryRef": "Audit.Rows"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "title": [
+        {
+          "properties": {
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Rows by layer'"
+                }
+              }
+            },
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

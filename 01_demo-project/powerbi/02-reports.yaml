@@ -179,3 +179,79 @@ reports:
             sort:
               field: Sales.Revenue
               direction: Descending
+
+      # -----------------------------------------------------------------------
+      - name: audit
+        display_name: Data Audit
+        description: >-
+          Row and value flow from bronze to gold. Answers "where did the rows
+          go" with a number rather than an opinion -- the question that was
+          asked three times during this build and needed a different ad-hoc
+          query each time.
+
+          Reads the newest audit run. The Run slicer is there to look back, not
+          because the page needs it.
+
+        visuals:
+          - type: card
+            title: Bronze rows
+            position: { x: 20, y: 20, width: 240, height: 110 }
+            fields:
+              Values: [Audit.Rows]
+            filters:
+              - field: Audit.Layer
+
+          - type: card
+            title: Rows retained
+            position: { x: 275, y: 20, width: 240, height: 110 }
+            fields:
+              Values: [Audit.Retention %]
+
+          - type: card
+            title: Rows lost from bronze
+            position: { x: 530, y: 20, width: 240, height: 110 }
+            fields:
+              Values: [Audit.Rows Lost From Bronze]
+
+          - type: card
+            title: Rejected
+            position: { x: 785, y: 20, width: 240, height: 110 }
+            fields:
+              Values: [Audit.Rejected]
+
+          - type: slicer
+            title: Audit run
+            position: { x: 1040, y: 20, width: 220, height: 110 }
+            fields:
+              Values: [Audit.Run]
+
+          # The funnel: rows surviving each layer, per entity.
+          - type: clusteredColumnChart
+            title: Rows by layer
+            position: { x: 20, y: 150, width: 620, height: 290 }
+            fields:
+              Category: [Audit.Layer]
+              Series: [Audit.Entity]
+              Y: [Audit.Rows]
+
+          - type: clusteredColumnChart
+            title: Value by layer
+            position: { x: 655, y: 150, width: 605, height: 290 }
+            fields:
+              Category: [Audit.Layer]
+              Series: [Audit.Entity]
+              Y: [Audit.Value]
+
+          # The detail anyone actually acts on: which entity lost what, where.
+          - type: tableEx
+            title: Layer flow
+            position: { x: 20, y: 455, width: 1240, height: 245 }
+            fields:
+              Values:
+                - Audit.Entity
+                - Audit.Layer
+                - Audit.Table
+                - Audit.Rows
+                - Audit.Value
+                - Audit.Rejected
+                - Audit.Retention %

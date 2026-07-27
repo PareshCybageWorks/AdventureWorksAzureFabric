@@ -136,7 +136,9 @@ def column_tmdl(model: str, table: dict, column: dict, types: dict,
     source = column["source"]
     name = column.get("name", source)
     key = f"{table['source_table']}.{source}".lower()
-    data_type = types.get(key, "string")
+    # An explicit type wins: it is how a table outside the gold mapping -- the
+    # audit, say -- gets modelled without inventing a fake gold entity for it.
+    data_type = column.get("type") or types.get(key, "string")
 
     hidden = column.get("hidden")
     if hidden is None:
@@ -446,7 +448,8 @@ def main() -> int:
     # simply missing, with nothing to explain why.
     unmapped = [f"{t['source_table']}.{c['source']}"
                 for t in spec["tables"] for c in t.get("columns", [])
-                if f"{t['source_table']}.{c['source']}".lower() not in types]
+                if f"{t['source_table']}.{c['source']}".lower() not in types
+                and not c.get("type")]
     if unmapped:
         print("  WARN   not described by the gold mapping; defaulting to string:")
         for name in unmapped:

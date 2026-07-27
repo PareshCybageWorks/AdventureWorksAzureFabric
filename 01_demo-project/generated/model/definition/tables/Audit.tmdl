@@ -1,0 +1,130 @@
+/// Row and value flow from bronze to gold, one row per entity per layer per run. Deliberately UNRELATED to the star schema: it describes the pipeline, not the business, and joining it to Date or Customer would let someone slice an audit by a dimension that had itself been filtered. Types are declared here because this table is not in the gold mapping -- it is operational, not dimensional.
+table Audit
+	lineageTag: c5acbf15-b4e9-55e2-98ce-f150d75a1ad7
+
+	column Run
+		dataType: string
+		sourceColumn: run_id
+		summarizeBy: none
+		lineageTag: dd160185-d09e-552e-a224-4b39e42d5f48
+
+	column Entity
+		dataType: string
+		sourceColumn: entity
+		summarizeBy: none
+		lineageTag: 5ca5924b-3c08-564c-b888-a124b061f9b5
+
+	column Layer
+		dataType: string
+		sourceColumn: layer
+		summarizeBy: none
+		lineageTag: 44e7379a-7aba-5065-bb30-a56fdd72d2db
+
+	column Table
+		dataType: string
+		sourceColumn: table_name
+		summarizeBy: none
+		lineageTag: e7c0fed2-cc3d-5fef-b34a-cd79ee03c759
+
+	column 'Row Count'
+		dataType: int64
+		isHidden
+		sourceColumn: row_count
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: a2177414-3ccd-5abd-bc63-85f39d9cc256
+
+	column 'Measure Value'
+		dataType: double
+		isHidden
+		sourceColumn: measure_value
+		summarizeBy: none
+		formatString: "₹"#,0.00
+		lineageTag: 533f95f4-03d7-517b-909f-d1a480e49f6b
+
+	column 'Rejected Count'
+		dataType: int64
+		isHidden
+		sourceColumn: rejected_count
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: 53cfe1d9-b33f-503b-8f55-afd2a42171d1
+
+	/// True where a layer legitimately changes the row count -- an SCD2 dimension holds one row per version, so gold exceeding silver is correct rather than a loss.
+	column 'Grain Changes'
+		dataType: boolean
+		sourceColumn: grain_changes
+		summarizeBy: none
+		lineageTag: b356bf92-7375-5e96-8a8a-065bc44ff25f
+
+	column Error
+		dataType: string
+		sourceColumn: error
+		summarizeBy: none
+		lineageTag: 5ae0a4cf-7a13-5a25-bf04-0dc8ee557823
+
+	column 'Measured At'
+		dataType: dateTime
+		sourceColumn: measured_at
+		summarizeBy: none
+		lineageTag: 77171961-31a7-5eb7-b1dc-90f5142dffb1
+
+	/// The most recent audit run in the current selection.
+	measure 'Latest Audit Run' = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+		displayFolder: Data Audit
+		lineageTag: 96dcb1a7-d4b9-5a9a-a56b-f7485f1311cb
+
+	/// Rows present at a layer on the latest run. Scoped to one run on purpose: the audit appends, so summing every run would report the pipeline as having processed its history over again.
+	measure Rows =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			RETURN CALCULATE(SUM(Audit[Row Count]), Audit[Run] = latest)
+		formatString: #,0
+		displayFolder: Data Audit
+		lineageTag: db5ccfe6-6ea6-5124-b7bf-67894bce9470
+
+	/// Money surviving to a layer. A count alone hides value moving without rows moving.
+	measure Value =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			RETURN CALCULATE(SUM(Audit[Measure Value]), Audit[Run] = latest)
+		formatString: "₹"#,0
+		displayFolder: Data Audit
+		lineageTag: 73d3ea17-6b1b-56c2-8ed3-d59c4c78f8c0
+
+	/// Rows the layer quarantined. What turns an unexplained drop into an explained one.
+	measure Rejected =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			RETURN CALCULATE(SUM(Audit[Rejected Count]), Audit[Run] = latest)
+		formatString: #,0
+		displayFolder: Data Audit
+		lineageTag: 9e7366a8-fdf2-5c02-98c8-fa0f7328e5c8
+
+	/// Rows this layer holds fewer than bronze did. Negative where the grain legitimately changes -- an SCD2 dimension carries one row per version.
+	measure 'Rows Lost From Bronze' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			VAR bronze =
+			    CALCULATE(SUM(Audit[Row Count]),
+			              Audit[Run] = latest, Audit[Layer] = "bronze",
+			              ALLSELECTED(Audit[Layer]))
+			RETURN bronze - [Rows]
+		formatString: #,0
+		displayFolder: Data Audit
+		lineageTag: eb7106b1-4380-57ea-863b-27fa8327d5f5
+
+	/// Share of bronze rows still present at this layer.
+	measure 'Retention %' =
+			VAR latest = CALCULATE(MAX(Audit[Run]), ALLSELECTED(Audit))
+			VAR bronze =
+			    CALCULATE(SUM(Audit[Row Count]),
+			              Audit[Run] = latest, Audit[Layer] = "bronze",
+			              ALLSELECTED(Audit[Layer]))
+			RETURN DIVIDE([Rows], bronze)
+		formatString: 0.0%
+		displayFolder: Data Audit
+		lineageTag: 908ddc2d-b821-5f6d-a0fe-c63bf728f7c5
+
+	partition Audit = entity
+		mode: directLake
+		source
+			entityName: audit_layer_flow
+			schemaName: dbo
+			expressionSource: DatabaseQuery

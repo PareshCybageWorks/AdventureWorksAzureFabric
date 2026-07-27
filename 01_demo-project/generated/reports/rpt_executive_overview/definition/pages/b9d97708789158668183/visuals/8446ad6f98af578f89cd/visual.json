@@ -1,0 +1,93 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.0.0/schema.json",
+  "name": "8446ad6f98af578f89cd",
+  "position": {
+    "x": 655,
+    "y": 150,
+    "width": 605,
+    "height": 290,
+    "z": 1006,
+    "tabOrder": 1006
+  },
+  "visual": {
+    "visualType": "clusteredColumnChart",
+    "drillFilterOtherVisuals": true,
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Layer"
+                }
+              },
+              "queryRef": "Audit.Layer"
+            }
+          ]
+        },
+        "Series": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Entity"
+                }
+              },
+              "queryRef": "Audit.Entity"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "Audit"
+                    }
+                  },
+                  "Property": "Value"
+                }
+              },
+              "queryRef": "Audit.Value"
+            }
+          ]
+        }
+      }
+    },
+    "objects": {
+      "title": [
+        {
+          "properties": {
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'Value by layer'"
+                }
+              }
+            },
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
