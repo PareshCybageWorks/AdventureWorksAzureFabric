@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "generators"))
 from _project import get_environment, get_storage_ids, get_workspace_id
 from _specs import load as load_spec
+import _tsql
 
 FABRIC_API = "https://api.fabric.microsoft.com/v1"
 SCOPE = "https://api.fabric.microsoft.com/.default"
@@ -130,12 +131,12 @@ def main() -> int:
 
     headers = {"Authorization": f"Bearer {get_token()}", "Content-Type": "application/json"}
 
-    folders = requests.get(f"{FABRIC_API}/workspaces/{workspace}/folders",
+    folders = _tsql.with_retry("GET", f"{FABRIC_API}/workspaces/{workspace}/folders",
                            headers=headers, timeout=60)
     folders.raise_for_status()
     paths = folder_paths(folders.json().get("value", []))
 
-    items = requests.get(f"{FABRIC_API}/workspaces/{workspace}/items",
+    items = _tsql.with_retry("GET", f"{FABRIC_API}/workspaces/{workspace}/items",
                          headers=headers, timeout=60)
     items.raise_for_status()
     all_items = items.json().get("value", [])
@@ -162,7 +163,8 @@ def main() -> int:
             if args.dry_run:
                 print(f"  would move {item['displayName']:<26} -> {folder_path}")
                 continue
-            response = requests.post(
+            response = _tsql.with_retry(
+                "POST",
                 f"{FABRIC_API}/workspaces/{workspace}/items/{item['id']}/move",
                 headers=headers, json={"targetFolderId": target}, timeout=60)
             if response.ok:

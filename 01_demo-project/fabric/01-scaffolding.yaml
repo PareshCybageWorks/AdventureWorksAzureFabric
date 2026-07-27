@@ -226,9 +226,14 @@ workspace_folders:
       everything downstream depends on.
     contains:
       - { item_type: Environment, name: env_spark }
-      # Cross-layer operational notebook. The monitor reads bronze, silver and
-      # gold, so it belongs to no single layer folder.
-      - { item_type: Notebook, name: nb_dq_monitor }
+    subfolders:
+      # Notebooks get their own subfolder, for the same reason each layer
+      # separates notebook from pipeline: an Environment and a notebook are
+      # different kinds of thing, opened by different people.
+      #
+      # Cross-layer operational notebooks live here. The monitor reads bronze,
+      # silver and gold, so it belongs to no single layer folder.
+      - { name: notebook, contains: [{ item_type: Notebook, name: nb_dq_monitor }] }
 
   - name: "1_bronze"
     layer: bronze
