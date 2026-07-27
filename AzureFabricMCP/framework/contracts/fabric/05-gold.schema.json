@@ -3,77 +3,150 @@
   "$id": "https://techtonic.io/fabric/contracts/fabric/05-gold.schema.json",
   "title": "Fabric Gold Mapping",
   "description": "Stage 5 of the Fabric track. The star schema and reporting views -- what Power BI connects to, and the only layer a business user should see.\n\nTwo schemas: `dbo` for physical tables written by the gold notebooks, `bi` for views shaped for reporting. No pipeline reads from `bi`; it exists so a view can be reshaped for a report without migrating a physical table.\n\nDimensions carry surrogate keys and SCD2 history. Silver deliberately does not, so the point where history begins is explicit.\n\nAUTHORITATIVE -- a non-conforming spec fails the build.",
-
   "type": "object",
-  "required": ["apiVersion", "kind", "metadata", "defaults", "dimensions", "facts"],
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "defaults",
+    "dimensions",
+    "facts"
+  ],
   "additionalProperties": false,
-
   "properties": {
-    "apiVersion": { "const": "fabric.techtonic.io/v1" },
-    "kind": { "const": "LayerMapping" },
-
+    "apiVersion": {
+      "const": "fabric.techtonic.io/v1"
+    },
+    "kind": {
+      "const": "LayerMapping"
+    },
     "metadata": {
       "type": "object",
-      "required": ["layer", "domain"],
+      "required": [
+        "layer",
+        "domain"
+      ],
       "additionalProperties": false,
       "properties": {
-        "layer": { "const": "gold" },
-        "domain": { "type": "string" },
-        "scaffolding_ref": { "type": "string" },
-        "sources_ref": { "type": "string" }
+        "layer": {
+          "const": "gold"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "scaffolding_ref": {
+          "type": "string"
+        },
+        "sources_ref": {
+          "type": "string"
+        }
       }
     },
-
     "defaults": {
       "type": "object",
-      "required": ["target_item", "physical_schema", "reporting_schema"],
+      "required": [
+        "target_item",
+        "physical_schema",
+        "reporting_schema"
+      ],
       "additionalProperties": false,
       "properties": {
-        "target_item": { "enum": ["warehouse", "lakehouse"] },
-        "physical_schema": { "type": "string" },
-        "reporting_schema": { "type": "string" },
+        "target_item": {
+          "enum": [
+            "warehouse",
+            "lakehouse"
+          ]
+        },
+        "physical_schema": {
+          "type": "string"
+        },
+        "reporting_schema": {
+          "type": "string"
+        },
         "write_mode": {
           "const": "overwrite",
           "description": "The Fabric Data Warehouse Spark connector supports overwrite ONLY. `append` fails with 'Write orchestration failed' and no root cause, so a one-row insert must be done as read, union, overwrite."
         },
-        "format": { "enum": ["delta", "parquet"] }
+        "format": {
+          "enum": [
+            "delta",
+            "parquet"
+          ]
+        }
       }
     },
-
     "dimensions": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["name", "schema", "source", "description", "scd", "surrogate_key", "business_key"],
+        "required": [
+          "name",
+          "schema",
+          "source",
+          "description",
+          "scd",
+          "surrogate_key",
+          "business_key"
+        ],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string", "pattern": "^dim_[a-z0-9_]+$" },
-          "schema": { "type": "string" },
+          "name": {
+            "type": "string",
+            "pattern": "^dim_[a-z0-9_]+$"
+          },
+          "schema": {
+            "type": "string"
+          },
           "source": {
             "type": "string",
             "description": "silver.<table>, or the literal `generated` for a dimension the framework builds (a calendar has no upstream table)."
           },
-          "description": { "type": "string" },
+          "description": {
+            "type": "string"
+          },
           "scd": {
-            "enum": ["type0", "type1", "type2"],
+            "enum": [
+              "type0",
+              "type1",
+              "type2"
+            ],
             "description": "type2 keeps history. Note that it keeps history INCLUDING history recorded wrongly -- a dimension first built with bad validity windows cannot self-correct, and needs an explicit rebuild."
           },
-          "surrogate_key": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*_sk$|^date_sk$" },
-          "business_key": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "surrogate_key": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_]*_sk$|^date_sk$"
+          },
+          "business_key": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
           "scd2_tracked_columns": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Only these open a new version. A phone correction should not fabricate a historical event; a region move must, because it changes which territory the sales are attributed to."
           },
           "scd2_columns": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
-              "valid_from": { "type": "string" },
-              "valid_to": { "type": "string" },
-              "is_current": { "type": "string" },
-              "version": { "type": "string" }
+              "valid_from": {
+                "type": "string"
+              },
+              "valid_to": {
+                "type": "string"
+              },
+              "is_current": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              }
             }
           },
           "generation": {
@@ -81,88 +154,198 @@
             "additionalProperties": false,
             "description": "For `source: generated` dimensions.",
             "properties": {
-              "start_date": { "type": "string" },
-              "end_date": { "type": "string" },
-              "fiscal_year_start_month": { "type": "integer", "minimum": 1, "maximum": 12 }
+              "start_date": {
+                "type": "string"
+              },
+              "end_date": {
+                "type": "string"
+              },
+              "fiscal_year_start_month": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 12
+              }
             }
           },
-          "columns": { "type": "array", "items": { "$ref": "#/$defs/column" } },
-          "business_rules": { "type": "array", "items": { "$ref": "#/$defs/businessRule" } },
+          "columns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/column"
+            }
+          },
+          "business_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/businessRule"
+            }
+          },
           "unknown_member": {
             "type": "object",
-            "required": ["enabled"],
+            "required": [
+              "enabled"
+            ],
             "additionalProperties": false,
             "description": "Guarantees an unmatched fact still joins rather than vanishing from a report without trace. Its defaults must cover every non-nullable column -- a warehouse infers NOT NULL from the first write and rejects a member carrying nulls.",
             "properties": {
-              "enabled": { "type": "boolean" },
-              "surrogate_key_value": { "type": "integer" },
-              "defaults": { "type": "object", "additionalProperties": true }
+              "enabled": {
+                "type": "boolean"
+              },
+              "surrogate_key_value": {
+                "type": "integer"
+              },
+              "defaults": {
+                "type": "object",
+                "additionalProperties": true
+              }
             }
           }
         },
         "allOf": [
           {
-            "if": { "properties": { "scd": { "const": "type2" } }, "required": ["scd"] },
+            "if": {
+              "properties": {
+                "scd": {
+                  "const": "type2"
+                }
+              },
+              "required": [
+                "scd"
+              ]
+            },
             "then": {
-              "required": ["scd2_tracked_columns"],
+              "required": [
+                "scd2_tracked_columns"
+              ],
               "description": "Type 2 without tracked columns either versions on every edit or never versions at all."
             }
           },
           {
-            "if": { "properties": { "source": { "const": "generated" } }, "required": ["source"] },
-            "then": { "required": ["generation"] }
+            "if": {
+              "properties": {
+                "source": {
+                  "const": "generated"
+                }
+              },
+              "required": [
+                "source"
+              ]
+            },
+            "then": {
+              "required": [
+                "generation"
+              ]
+            }
           }
         ]
       }
     },
-
     "facts": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["name", "schema", "description", "grain", "source", "dimension_keys", "measures"],
+        "required": [
+          "name",
+          "schema",
+          "description",
+          "grain",
+          "source",
+          "dimension_keys",
+          "measures"
+        ],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string", "pattern": "^fct_[a-z0-9_]+$" },
-          "schema": { "type": "string" },
-          "description": { "type": "string" },
+          "name": {
+            "type": "string",
+            "pattern": "^fct_[a-z0-9_]+$"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
           "grain": {
             "type": "string",
             "minLength": 40,
             "description": "Declared IN WORDS and length-checked. A fact whose grain nobody wrote down is a fact somebody will double-count."
           },
-          "source": { "type": "string" },
+          "source": {
+            "type": "string"
+          },
           "joins": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["table", "join_on", "type"],
+              "required": [
+                "table",
+                "join_on",
+                "type",
+                "on_unmatched"
+              ],
               "additionalProperties": false,
               "properties": {
-                "table": { "type": "string" },
+                "table": {
+                  "type": "string"
+                },
                 "join_on": {
                   "type": "string",
                   "description": "Named `join_on`, not `on` -- a bare `on:` key parses as boolean true under YAML 1.1."
                 },
-                "type": { "enum": ["inner", "left", "right", "outer"] },
-                "description": { "type": "string" }
+                "type": {
+                  "enum": [
+                    "inner",
+                    "left",
+                    "right",
+                    "outer"
+                  ]
+                },
+                "description": {
+                  "type": "string"
+                },
+                "on_unmatched": {
+                  "enum": [
+                    "quarantine",
+                    "drop",
+                    "fail"
+                  ],
+                  "description": "REQUIRED. What happens to source rows this join discards. An inner join in a layer transition silently removes rows and the value they carry -- the loss shows up only as a reconciliation gap much later, if anyone measures one. Stating it forces the choice to be made rather than inherited from the join type. quarantine: written to quarantine_table, counted, and reconcilable. drop: discarded on purpose, and the reason belongs in `description`. fail: the load stops -- for transitions where losing a row is never acceptable."
+                },
+                "quarantine_table": {
+                  "type": "string",
+                  "description": "Required when on_unmatched is quarantine. Conventionally <fact>_orphans, in the same schema as the fact."
+                }
               }
             }
           },
-          "degenerate_dimensions": { "type": "array", "items": { "$ref": "#/$defs/column" } },
+          "degenerate_dimensions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/column"
+            }
+          },
           "dimension_keys": {
             "type": "array",
             "minItems": 1,
             "items": {
               "type": "object",
-              "required": ["dimension", "target", "lookup_on"],
+              "required": [
+                "dimension",
+                "target",
+                "lookup_on"
+              ],
               "additionalProperties": false,
               "description": "FOUR names are involved and only two coincide in the easy case: `lookup_on` is the fact's column, the dimension's business key may differ, its surrogate key may differ again, and `target` is what lands on the fact. For customer and product they collapse; for a date dimension they do not.",
               "properties": {
-                "dimension": { "type": "string" },
-                "target": { "type": "string" },
-                "lookup_on": { "type": "string" },
+                "dimension": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                },
+                "lookup_on": {
+                  "type": "string"
+                },
                 "scd2_as_of": {
                   "type": "string",
                   "description": "Enables point-in-time lookup: the fact joins the dimension version current WHEN THE EVENT HAPPENED, not the version current today. That is the difference between revenue by the region a customer was in when they bought and the region they are in now."
@@ -170,95 +353,246 @@
               }
             }
           },
-          "measures": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/measure" } },
-          "business_rules": { "type": "array", "items": { "$ref": "#/$defs/businessRule" } },
-          "quality_flags": { "type": "array", "items": { "$ref": "#/$defs/column" } },
+          "measures": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/measure"
+            }
+          },
+          "business_rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/businessRule"
+            }
+          },
+          "quality_flags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/column"
+            }
+          },
           "tests": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["id", "description", "assertion", "on_failure"],
+              "required": [
+                "id",
+                "description",
+                "assertion",
+                "on_failure"
+              ],
               "additionalProperties": false,
               "properties": {
-                "id": { "type": "string", "pattern": "^GOLD-[A-Z]+-[0-9]{3}$" },
-                "description": { "type": "string" },
-                "assertion": { "type": "string" },
-                "on_failure": { "enum": ["fail", "warn"] }
+                "id": {
+                  "type": "string",
+                  "pattern": "^GOLD-[A-Z]+-[0-9]{3}$"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "assertion": {
+                  "type": "string"
+                },
+                "on_failure": {
+                  "enum": [
+                    "fail",
+                    "warn"
+                  ]
+                }
               }
             }
           }
         }
       }
     },
-
     "views": {
       "type": "array",
       "description": "Power BI binds to these, never to the physical schema. That indirection means a report is reshaped by altering a view instead of migrating a table.",
       "items": {
         "type": "object",
-        "required": ["name", "schema", "description", "grain", "sql"],
+        "required": [
+          "name",
+          "schema",
+          "description",
+          "grain",
+          "sql"
+        ],
         "additionalProperties": false,
         "properties": {
-          "name": { "type": "string", "pattern": "^vw_[a-z0-9_]+$" },
-          "schema": { "type": "string" },
-          "description": { "type": "string" },
-          "grain": { "type": "string" },
-          "sql": { "type": "string" }
+          "name": {
+            "type": "string",
+            "pattern": "^vw_[a-z0-9_]+$"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "grain": {
+            "type": "string"
+          },
+          "sql": {
+            "type": "string"
+          }
         }
       }
     }
   },
-
   "$defs": {
     "column": {
       "type": "object",
-      "required": ["target"],
+      "required": [
+        "target"
+      ],
       "additionalProperties": false,
       "properties": {
-        "source": { "type": ["string", "null"] },
-        "target": { "type": "string" },
-        "type": { "enum": ["string", "integer", "bigint", "decimal", "boolean", "date", "timestamp"] },
-        "precision": { "type": "integer" },
-        "scale": { "type": "integer" },
-        "key": { "enum": ["natural", "business", "foreign", "surrogate"] },
-        "pii": { "enum": ["name", "email", "phone", "address", "government_id", "financial", "health"] },
-        "mask": { "type": "string" },
-        "description": { "type": "string" }
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "bigint",
+            "decimal",
+            "boolean",
+            "date",
+            "timestamp"
+          ]
+        },
+        "precision": {
+          "type": "integer"
+        },
+        "scale": {
+          "type": "integer"
+        },
+        "key": {
+          "enum": [
+            "natural",
+            "business",
+            "foreign",
+            "surrogate"
+          ]
+        },
+        "pii": {
+          "enum": [
+            "name",
+            "email",
+            "phone",
+            "address",
+            "government_id",
+            "financial",
+            "health"
+          ]
+        },
+        "mask": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
       }
     },
-
     "measure": {
       "type": "object",
-      "required": ["target", "type", "aggregation", "additive"],
+      "required": [
+        "target",
+        "type",
+        "aggregation",
+        "additive"
+      ],
       "additionalProperties": false,
       "properties": {
-        "source": { "type": "string" },
-        "target": { "type": "string" },
-        "type": { "enum": ["integer", "bigint", "decimal", "double"] },
-        "precision": { "type": "integer" },
-        "scale": { "type": "integer" },
-        "aggregation": { "enum": ["sum", "avg", "min", "max", "count"] },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "integer",
+            "bigint",
+            "decimal",
+            "double"
+          ]
+        },
+        "precision": {
+          "type": "integer"
+        },
+        "scale": {
+          "type": "integer"
+        },
+        "aggregation": {
+          "enum": [
+            "sum",
+            "avg",
+            "min",
+            "max",
+            "count"
+          ]
+        },
         "additive": {
           "type": "boolean",
           "description": "Whether the measure can be summed across every dimension. A unit price cannot -- averaging it across rows is only valid weighted by quantity -- and saying so here stops a report doing it."
         },
-        "description": { "type": "string" }
+        "description": {
+          "type": "string"
+        }
       }
     },
-
     "businessRule": {
       "type": "object",
-      "required": ["name", "target", "expression"],
+      "required": [
+        "name",
+        "target",
+        "expression"
+      ],
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string" },
-        "target": { "type": "string" },
-        "type": { "enum": ["string", "integer", "bigint", "decimal", "boolean", "date", "timestamp"] },
-        "precision": { "type": "integer" },
-        "scale": { "type": "integer" },
-        "expression": { "type": "string" },
-        "description": { "type": "string" },
-        "depends_on": { "type": "array", "items": { "type": "string" } },
+        "name": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "bigint",
+            "decimal",
+            "boolean",
+            "date",
+            "timestamp"
+          ]
+        },
+        "precision": {
+          "type": "integer"
+        },
+        "scale": {
+          "type": "integer"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "provisional": {
           "type": "boolean",
           "description": "Placeholder logic standing in for data the project does not have, e.g. a flat cost ratio where no cost column exists. Flagged so it is visibly marked in the generated notebook and cannot quietly inform a pricing decision."

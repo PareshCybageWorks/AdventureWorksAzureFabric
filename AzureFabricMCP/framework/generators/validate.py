@@ -570,6 +570,137 @@ def check_layer_chain(specs: dict, report: Report) -> None:
         report.ok("chain: bronze -> silver -> gold references all resolve")
 
 
+def check_discarded_rows(specs: dict, report: Report) -> None:
+    """Every join that can discard rows says what happens to them.
+
+    A join in a layer transition removes rows and the value they carry. Nothing
+    reports it: the fact simply has fewer rows than its source, and the loss
+    surfaces only as a reconciliation gap, much later, if anyone happens to be
+    measuring one.
+
+    This is exactly what happened here. An inner join dropped 2,945 order lines
+    worth 15.8M, and every report built on the fact was short by 4.15% with no
+    indication anywhere. `on_unmatched` forces the choice to be stated rather
+    than inherited from the join type -- and when the choice is `quarantine`,
+    the rows stay countable.
+
+    Generalises to any future transition: a spec cannot silently lose rows.
+    """
+    gold = specs.get("fabric/05-gold", {}).get("doc")
+    if not gold:
+        return
+
+    monitoring = specs.get("dataops/01-monitoring", {}).get("doc") or {}
+    reconciled: set[str] = set()
+    for expectation in monitoring.get("expectations") or []:
+        for check in expectation.get("checks") or []:
+            if check.get("rule") == "reconciliation":
+                for side in ("left", "right"):
+                    table = (check.get(side) or {}).get("table")
+                    if table:
+                        reconciled.add(table.rsplit(".", 1)[-1])
+
+    errors: list[str] = []
+    warnings: list[str] = []
+    quarantining = 0
+
+    for fact in gold.get("facts") or []:
+        for join in fact.get("joins") or []:
+            where = f"{fact['name']} join {join.get('table')}"
+            policy = join.get("on_unmatched")
+
+            if not policy:
+                errors.append(
+                    f"{where}: no on_unmatched. A {join.get('type')} join "
+                    f"discards source rows and the value they carry, and "
+                    f"nothing reports it. State quarantine, drop or fail.")
+                continue
+
+            if policy == "quarantine":
+                quarantining += 1
+                if not join.get("quarantine_table"):
+                    errors.append(f"{where}: on_unmatched is quarantine but no "
+                                  f"quarantine_table is named")
+            elif policy == "drop" and not join.get("description"):
+                # Dropping is legitimate, but only as a decision someone made.
+                errors.append(f"{where}: on_unmatched is drop with no "
+                              f"description saying why the rows are not needed")
+
+        # A fact that can lose rows needs something measuring whether it did.
+        loses_rows = any(j.get("on_unmatched") in ("quarantine", "drop")
+                         for j in fact.get("joins") or [])
+        if loses_rows and monitoring and fact["name"] not in reconciled:
+            warnings.append(
+                f"{fact['name']} can discard rows but no reconciliation check "
+                f"covers it, so the loss would not be measured")
+
+    if errors:
+        for error in errors:
+            report.error("discarded-rows", error)
+    else:
+        total = sum(len(f.get("joins") or []) for f in gold.get("facts") or [])
+        report.ok(f"discarded-rows: all {total} join(s) declare what happens to "
+                  f"rows they discard ({quarantining} quarantining)")
+    for warning in warnings:
+        report.warn("discarded-rows", warning)
+
+
+def check_promotion(specs: dict, report: Report) -> None:
+    """The declared promotion mechanism matches the rest of the spec.
+
+    Two blocks can contradict each other silently: `deployment_pipeline`
+    describes promotion through Fabric, while the workflows deploy by running
+    scripts. Both being present reads as though the pipeline is in use when
+    nothing creates or triggers it.
+
+    The framework supports either -- promotion is a per-project decision, since
+    the framework itself is never deployed to Fabric. It just has to be stated.
+    """
+    spec = specs.get("cicd/01-pipeline", {}).get("doc")
+    if not spec:
+        return
+
+    promotion = spec.get("promotion") or {}
+    mechanism = promotion.get("mechanism")
+
+    if not mechanism:
+        report.warn("promotion",
+                    "no promotion.mechanism declared. The spec has both a "
+                    "deployment_pipeline block and script-based deploy "
+                    "workflows, and nothing says which one actually promotes.")
+        return
+
+    if mechanism == "deployment_pipeline":
+        # Refused rather than half-supported: an untested promotion path that
+        # looks supported is worse than one that says it is not.
+        report.error("promotion",
+                     "mechanism is deployment_pipeline, which the framework "
+                     "does not implement -- nothing creates or triggers a "
+                     "Fabric deployment pipeline. Use scripts, or build the "
+                     "path first. A promotion route that looks supported and "
+                     "is not will be discovered in production.")
+        return
+
+    strategy = (spec.get("parameterisation") or {}).get("strategy")
+    contradicts = strategy == "deployment_rules"
+    if contradicts:
+        report.error("promotion",
+                     f"mechanism is {mechanism} but parameterisation.strategy "
+                     f"is deployment_rules, which only a Fabric deployment "
+                     f"pipeline applies. Script promotion resolves "
+                     f"placeholders.")
+
+    if spec.get("deployment_pipeline") and not promotion.get("rationale"):
+        report.warn("promotion",
+                    "a deployment_pipeline block is present but the mechanism "
+                    "is scripts. Record why in promotion.rationale, or a reader "
+                    "will assume the pipeline is what promotes.")
+
+    if not contradicts:
+        report.ok(f"promotion: mechanism is {mechanism}, consistent with "
+                  f"parameterisation.strategy={strategy}")
+
+
 def check_semantic_model(specs: dict, report: Report) -> None:
     """The P1 model resolves, and nothing collides.
 
@@ -1015,6 +1146,8 @@ SEMANTIC_CHECKS = (
     check_watermarks,
     check_defect_handlers,
     check_view_dialect,
+    check_discarded_rows,
+    check_promotion,
     check_rule_coverage,
     check_layer_chain,
     check_semantic_model,

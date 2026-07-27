@@ -33,9 +33,37 @@ metadata:
 # Set the variable once the setup in docs/CI-SETUP.md is done.
 deploy_guard: FABRIC_DEPLOY_ENABLED
 
+promotion:
+  mechanism: scripts
+  rationale: >-
+    The spec is the source of truth here, so every environment is built from it
+    independently by the deploy scripts, and nothing that was hand-edited in a
+    workspace can travel forward.
+
+    A Fabric deployment pipeline promotes whatever is in the previous
+    WORKSPACE, which inverts that: the workspace becomes the source of truth,
+    and the no-drift gate would be enforcing a rule the promotion path ignores.
+
+    The usual argument for a deployment pipeline -- ship exactly the bits you
+    tested -- does not apply, because generation is deterministic. UUID5 lineage
+    tags make regeneration byte-identical, and the only per-environment
+    difference is placeholder resolution, which is what deployment rules would
+    do anyway.
+
+    A deployment pipeline would also not cover the warehouse migrations or the
+    wheel on env_spark, so half these scripts would run regardless.
+
+    This is a per-project choice, not a framework one: the framework is never
+    deployed to Fabric, so only project artefacts are ever promoted.
+
+# NOT the promotion mechanism -- see promotion.mechanism above. This records the
+# intended topology and, more usefully, what must never be promoted. Nothing
+# reads it.
 deployment_pipeline:
   name: dp-analytics
-  description: Promotes Fabric items across the four environment workspaces.
+  description: >-
+    Declared topology only. Retained because excluded_items records a real
+    decision worth keeping, not because anything acts on this block.
   stages:
     - name: Development
       environment: dev

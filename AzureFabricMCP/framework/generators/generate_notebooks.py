@@ -781,12 +781,52 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
     for join in fact.get("joins", []):
         table = join["table"].replace("silver.", "")
         note = join.get("description", "")
-        cells.append(code_cell(
-            f'# Join {table} ({join.get("type", "inner")})\n'
+        how = join.get("type", "inner")
+        key = join["join_on"]
+        policy = join.get("on_unmatched", "drop")
+
+        code = (
+            f'# Join {table} ({how})\n'
             f'# {" ".join(note.split())}\n'
             f'{table} = spark.read.table(f"{{source_item}}.{table}")\n'
-            f'df = df.join({table}, on="{join["join_on"]}", how="{join.get("type", "inner")}")\n'
-        ))
+        )
+
+        if policy == "quarantine" and how == "inner":
+            quarantine = join.get("quarantine_table") or f"{fact['name']}_orphans"
+            # Captured BEFORE the join, using left_anti -- the rows the inner
+            # join is about to discard. After the join they are simply gone and
+            # there is nothing left to count.
+            code += (
+                f'\n'
+                f'# Rows this join discards, captured before it happens.\n'
+                f'# on_unmatched: quarantine -- they are a defect, not an\n'
+                f'# acceptable loss, so they stay countable and reconcilable\n'
+                f'# instead of leaving only a gap in a total.\n'
+                f'_orphans = df.join({table}.select("{key}"), on="{key}", how="left_anti")\n'
+                f'_orphan_count = _orphans.count()\n'
+                f'if _orphan_count:\n'
+                f'    (_orphans\n'
+                f'        .withColumn("_quarantined_at", F.current_timestamp())\n'
+                f'        .withColumn("_reason", F.lit("no matching {key} in {table}"))\n'
+                f'        .write.mode("overwrite").option("mergeSchema", "true")\n'
+                f'        .saveAsTable("{quarantine}"))\n'
+                f'print(f"quarantined {{_orphan_count:,}} row(s) to {quarantine}")\n'
+            )
+
+        elif policy == "fail" and how == "inner":
+            code += (
+                f'\n'
+                f'# on_unmatched: fail -- losing a row here is never acceptable.\n'
+                f'_unmatched = df.join({table}.select("{key}"), on="{key}",\n'
+                f'                     how="left_anti").count()\n'
+                f'if _unmatched:\n'
+                f'    raise ValueError(\n'
+                f'        f"{{_unmatched:,}} row(s) have no matching {key} in "\n'
+                f'        f"{table}; on_unmatched is fail")\n'
+            )
+
+        code += f'\ndf = df.join({table}, on="{key}", how="{how}")\n'
+        cells.append(code_cell(code))
 
     # The fact's join column and the dimension's business key are different
     # concepts that happen to share a name for customer and product but not for

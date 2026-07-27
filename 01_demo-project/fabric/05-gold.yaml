@@ -187,8 +187,20 @@ facts:
     joins:
       # `join_on` rather than `on` -- a bare `on:` key parses as boolean true
       # under YAML 1.1, silently producing a key nothing can look up.
-      - { table: silver.stg_orders, join_on: order_id, type: inner,
-          description: "Inner join is load-bearing: an order line whose header was quarantined must not reach gold." }
+      - table: silver.stg_orders
+        join_on: order_id
+        type: inner
+        on_unmatched: quarantine
+        quarantine_table: fct_sales_orphans
+        description: >-
+          Inner join is load-bearing: an order line whose header was
+          quarantined must not reach gold carrying a header it does not have.
+
+          The rows it removes are a DEFECT, not an acceptable loss. Dropping
+          them silently put 2,945 lines and 15,837,278 of line value outside
+          every report built on this fact, and the only trace was a
+          reconciliation gap nobody was measuring yet. They are quarantined so
+          the loss is counted, queryable, and reconcilable against silver.
 
     degenerate_dimensions:
       # Kept on the fact rather than promoted to a dimension of their own --

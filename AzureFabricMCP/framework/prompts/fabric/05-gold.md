@@ -91,13 +91,43 @@ where no cost column exists — must set `provisional: true`. The generator then
 marks it visibly in the notebook, so it cannot quietly inform a pricing
 decision.
 
-## Step 5 — Reconcile back to silver
+## Step 5 — Declare what every join discards
 
-Gold must tie out. Compare against the rows that actually **reached** gold: an
-inner join legitimately drops lines whose header was quarantined, so comparing
-against all of silver fails a correct build. Reconcile on **money**, not on
-whatever additive measure comes first — a check that ties out unit counts while
-revenue drifts is worse than no check.
+`on_unmatched` is **required** on every join. The alternative is a silent loss.
+
+| | |
+|---|---|
+| `quarantine` | written to `quarantine_table`, counted, reconcilable |
+| `drop` | discarded deliberately — `description` must say why |
+| `fail` | the load stops; for transitions where losing a row is never acceptable |
+
+**This rule exists because it happened here.** The inner join from
+`stg_order_items` to `stg_orders` is correct — a line cannot reach gold carrying
+a header it does not have. But it removed **2,945 lines worth ₹15,837,278**, and
+every report built on `fct_sales` was short by 4.15% with nothing anywhere
+saying so.
+
+The join stays `inner`. What changed is that the discarded rows are captured
+with `left_anti` **before** it — afterwards they are gone — and written to
+`fct_sales_orphans` with a reason.
+
+> An earlier version of this guidance said an inner join "legitimately drops"
+> such lines and warned against reconciling to all of silver. That advice is
+> what kept the loss invisible. Treat discarded rows as a defect until someone
+> argues otherwise in `description`.
+
+## Step 6 — Reconcile back to silver
+
+Gold must tie out, and the comparison is against **all** of silver — that is
+what makes a loss visible. Quarantined value plus fact value must equal the
+source; if it does not, rows are disappearing somewhere unaccounted for.
+
+Reconcile on **money**, not on whatever additive measure comes first — a check
+that ties out unit counts while revenue drifts is worse than no check.
+
+Use a `reconciliation` check in D1, not `arithmetic_consistency`, which
+evaluates one table and cannot compare layers. `validate.py` warns when a fact
+can discard rows and nothing reconciles it.
 
 ## Exit gate
 
