@@ -44,12 +44,13 @@ Two things, and the second is the one people miss.
 |---|---|---|---|
 | dev  | AgenticAIDemo_dev | `13c508c8-8fe8-4539-9cf4-2b4a3b91b32f` | Admin |
 | qa   | AgenticAIDemo_qa  | `ca418d16-23ac-41ab-b892-eaa1cd04e268` | Admin |
-| uat  | AgenticAIDemo_uat | `08f3d907-80fa-4e86-adfb-ef7d7e5fc34e` | Contributor |
+| uat  | AgenticAIDemo_uat | `08f3d907-80fa-4e86-adfb-ef7d7e5fc34e` | Admin |
 | prod | AgenticAIDemo     | `00e8f132-21d1-41ed-bbfc-ad3a223cf714` | Admin |
 
 Contributor is sufficient for everything the framework does — create items,
-deploy, run notebooks. The three Admin grants are historical rather than
-required, and could be reduced.
+deploy, run notebooks. Admin additionally allows deleting the workspace and
+changing its access, neither of which any script here needs. Worth narrowing to
+Contributor if this principal is ever shared beyond this pipeline.
 
 **b. The tenant setting.** In the Fabric admin portal, enable
 **"Service principals can use Fabric APIs"** and include a security group
