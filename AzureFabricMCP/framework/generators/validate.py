@@ -695,6 +695,77 @@ def check_cascade_quarantine(specs: dict, report: Report) -> None:
         report.ok(f"cascade: {len(cascades)} parent/child rejection rule(s) resolve")
 
 
+def check_promotion_path(specs: dict, report: Report) -> None:
+    """Every declared environment can actually be deployed to.
+
+    uat had a workspace, provisioned storage, a deployment_pipeline stage and
+    four gates blocking it -- and no workflow that deployed to it. The chain
+    broke at exactly the step a business owner signs off, and nothing said so,
+    because the branch/environment mapping existed only as an implication of
+    whichever workflow triggers happened to exist.
+
+    Declaring `branch` per environment makes the mapping a fact the specs hold,
+    which is what lets this be checked at all.
+    """
+    scaffolding = specs.get("fabric/01-scaffolding", {}).get("doc")
+    cicd = specs.get("cicd/01-pipeline", {}).get("doc")
+    if not scaffolding or not cicd:
+        return
+
+    environments = scaffolding.get("environments") or []
+    deployed = {j.get("environment")
+                for w in cicd.get("workflows") or []
+                for j in w.get("jobs") or []
+                if j.get("environment")}
+
+    # branch -> the environments claiming it
+    claims: dict[str, list[str]] = {}
+    errors: list[str] = []
+
+    for environment in environments:
+        name = environment["name"]
+        branch = environment.get("branch")
+
+        if not branch:
+            report.warn("promotion-path",
+                        f"{name} declares no branch, so nothing can check it "
+                        f"has a deploy path")
+            continue
+        claims.setdefault(branch, []).append(name)
+
+        if name not in deployed:
+            errors.append(
+                f"{name} is declared (branch {branch!r}, workspace "
+                f"{environment.get('workspace')}) but no workflow job deploys "
+                f"to it. It is unreachable however many gates guard it.")
+
+    for branch, owners in claims.items():
+        if len(owners) > 1:
+            errors.append(f"branch {branch!r} is claimed by more than one "
+                          f"environment: {owners}. A push would deploy to both.")
+
+    # A workflow triggered by a branch push should target the environment that
+    # branch belongs to -- otherwise merging to qa deploys somewhere else.
+    by_branch = {e.get("branch"): e["name"] for e in environments if e.get("branch")}
+    for workflow in cicd.get("workflows") or []:
+        pushed = ((workflow.get("triggers") or {}).get("push") or {}).get("branches") or []
+        targets = {j.get("environment") for j in workflow.get("jobs") or []
+                   if j.get("environment")}
+        for branch in pushed:
+            expected = by_branch.get(branch)
+            if expected and targets and expected not in targets:
+                errors.append(
+                    f"{workflow['name']} triggers on push to {branch!r}, which "
+                    f"belongs to {expected}, but deploys to {sorted(targets)}")
+
+    if errors:
+        for error in errors:
+            report.error("promotion-path", error)
+    else:
+        chain = " -> ".join(e["name"] for e in environments)
+        report.ok(f"promotion-path: every environment is reachable ({chain})")
+
+
 def check_promotion(specs: dict, report: Report) -> None:
     """The declared promotion mechanism matches the rest of the spec.
 
@@ -1198,6 +1269,7 @@ SEMANTIC_CHECKS = (
     check_view_dialect,
     check_discarded_rows,
     check_cascade_quarantine,
+    check_promotion_path,
     check_promotion,
     check_rule_coverage,
     check_layer_chain,

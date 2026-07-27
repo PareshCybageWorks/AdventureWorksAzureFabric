@@ -91,6 +91,7 @@ domains:
 # -----------------------------------------------------------------------------
 environments:
   - name: dev
+    branch: dev
     workspace: AgenticAIDemo_dev
     workspace_id: 13c508c8-8fe8-4539-9cf4-2b4a3b91b32f
     capacity_sku: FTL64
@@ -102,16 +103,19 @@ environments:
         wh_gold:   72d85a63-d8c6-4978-803a-fa5cc3e195d8
 
   - name: qa
+    branch: qa
     workspace: AgenticAIDemo_qa
     workspace_id: ca418d16-23ac-41ab-b892-eaa1cd04e268
     capacity_sku: FTL64
 
   - name: uat
+    branch: uat
     workspace: AgenticAIDemo_uat
     workspace_id: 08f3d907-80fa-4e86-adfb-ef7d7e5fc34e
     capacity_sku: FTL64
 
   - name: prod
+    branch: main
     # No suffix, so this is the shortest and most innocuous name of the four.
     # `is_production` marks it: destructive operations resolve it by ID, never
     # by name.

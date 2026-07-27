@@ -234,6 +234,37 @@ workflows:
           - python AzureFabricMCP/framework/tools/query_model.py --project 01_demo-project --env qa --smoke
 
   # ---------------------------------------------------------------------------
+  - name: cd-deploy-uat
+    file: .github/workflows/cd-deploy-uat.yml
+    description: >-
+      Business verification against real figures. This existed nowhere until
+      the branch/environment mapping was declared and validated -- uat had a
+      workspace, provisioned storage, a pipeline stage and four gates blocking
+      it, but no workflow ever deployed to it, so the chain broke silently at
+      exactly the step a business owner signs off.
+    triggers:
+      push:
+        branches: [uat]
+    jobs:
+      - id: deploy
+        environment: uat
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env uat --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env uat --create-missing
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env uat
+
+      - id: dq-gate
+        environment: uat
+        needs: [deploy]
+        steps:
+          - python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env uat
+
+  # ---------------------------------------------------------------------------
   - name: cd-deploy-prod
     file: .github/workflows/cd-deploy-prod.yml
     description: >-
