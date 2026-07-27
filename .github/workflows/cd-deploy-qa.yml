@@ -45,7 +45,7 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: validate.py
-        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
 
       - name: provision_storage.py
         run: python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa

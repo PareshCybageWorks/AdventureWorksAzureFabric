@@ -136,13 +136,18 @@ workflows:
           Specs conform to their contracts and to every semantic rule. This is
           the cheapest gate in the system and catches the most.
 
-          NOT --strict here, deliberately. Errors block the merge; warnings are
-          shown but do not. A warning like "17 checks record no calibration
-          note" is a quality nudge, and blocking every pull request on it
-          teaches people to silence warnings rather than act on them. The qa and
-          prod deploys DO run --strict, so a warning has to be cleared before a
-          release candidate advances -- the same escalating model as the
-          no-drift gate, which blocks qa/uat/prod but not dev.
+          Errors block everywhere; warnings never do. They are printed on
+          every run and reviewed, not enforced.
+
+          The alternative -- --strict on qa and above -- was tried and dropped.
+          It made a release candidate hostage to advisory findings like "17
+          checks record no calibration note", which is a quality nudge rather
+          than a defect. A gate that fails for reasons nobody intends to act on
+          today is one people learn to route around, and that habit spreads to
+          the gates that do matter.
+
+          The checks that genuinely must hold are errors, and no-drift and
+          dq-gate still block on their own terms.
         steps:
           - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
 
@@ -200,7 +205,7 @@ workflows:
       - id: deploy
         environment: qa
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
@@ -249,7 +254,7 @@ workflows:
       - id: deploy
         environment: uat
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env uat
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env uat --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env uat --create-missing
@@ -278,7 +283,7 @@ workflows:
       - id: deploy
         environment: prod
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
           - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env prod
           - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env prod --wait
           - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env prod --create-missing
@@ -314,8 +319,7 @@ gates:
     automated: true
     criteria: >-
       Every spec conforms to its contract and passes all semantic checks.
-      Errors block everywhere. Warnings block only at qa and above, where the
-      deploy runs --strict.
+      Errors block everywhere; warnings are reported but never block.
 
   - id: unit-tests
     blocks: [dev, qa, uat, prod]

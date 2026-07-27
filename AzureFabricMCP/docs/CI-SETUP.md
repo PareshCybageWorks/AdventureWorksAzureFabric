@@ -4,8 +4,18 @@ What has to exist before the deploy workflows can run. Everything here is done
 in Azure and GitHub — none of it can be generated from this repository, and
 none of it should be committed to it.
 
-Until step 5 is done, **deploy jobs skip rather than fail**. `ci-validate` and
-`ops-monitor` need no credentials and run regardless.
+Until step 5 is done, **deploy jobs skip rather than fail**. `ci-validate`
+needs no credentials and runs regardless.
+
+Once enabled, promotion is a merge:
+
+```
+feature/* --PR--> dev --> qa --> uat --> main (tag v* deploys prod)
+```
+
+Each branch push deploys to the environment that branch declares in
+`fabric/01-scaffolding.yaml`, and validation refuses a spec where those two
+disagree.
 
 ---
 
@@ -80,8 +90,9 @@ or subscription.
 
 ## 4. Create the GitHub Environments
 
-**Settings → Environments.** Create `dev`, `qa` and `prod`, matching the
-`environment:` in each workflow job.
+**Settings → Environments.** Create `dev`, `qa`, `uat` and `prod` — four,
+matching the `environment:` in each workflow job. `uat` is easy to miss; it had
+no deploy workflow at all until the branch mapping was declared and checked.
 
 **This is where approval gates actually live.** The spec declares two manual
 gates gating prod:
@@ -151,10 +162,14 @@ It prints which check, on which table, measured what — because a failed Fabric
 notebook reports only "session failed", and a gate nobody can read is a gate
 nobody trusts.
 
-**It will currently fail a qa deploy.** `GD-SALES-005` is severity `critical`
-and erroring, and qa blocks on `error` and `critical`. That is the gate working:
-the check is a cross-table reconciliation that `arithmetic_consistency` cannot
-evaluate, and it needs a `reconciliation` rule before qa can go green.
+`GD-SALES-005` — gold must tie back to silver exactly — previously failed at
+4.15%, because 2,945 order lines whose parent order had been quarantined were
+dropped by a join in gold. `cascade_quarantine` now removes them at silver
+instead, so silver and gold reconcile and the gate passes.
+
+Validation warnings do NOT block. Errors do. Warnings are printed on every run
+and reviewed rather than enforced, so a release candidate is never hostage to an
+advisory finding.
 
 To see the position without blocking a deploy:
 
