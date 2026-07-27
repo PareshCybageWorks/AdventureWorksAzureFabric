@@ -53,6 +53,20 @@ defaults:
 # =============================================================================
 # stg_customers
 # =============================================================================
+# Rejections that must propagate. Runs as a post-pass over the whole layer,
+# after every table is built -- stg_orders is corrected FROM stg_order_items,
+# so which orders survive is not known while the lines are being written.
+#
+# Without this, 999 quarantined orders left 2,945 of their lines behind in
+# stg_order_items. Nothing flagged them -- a line is perfectly valid on its own
+# -- and gold's inner join then discarded them, putting 15,837,278 outside
+# every report with no trace but a reconciliation gap.
+cascade_quarantine:
+  - child: stg_order_items
+    parent: stg_orders
+    join_on: order_id
+    reason: parent order failed cleansing
+
 tables:
 
   - target: stg_customers

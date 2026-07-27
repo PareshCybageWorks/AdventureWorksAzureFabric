@@ -645,6 +645,56 @@ def check_discarded_rows(specs: dict, report: Report) -> None:
         report.warn("discarded-rows", warning)
 
 
+def check_cascade_quarantine(specs: dict, report: Report) -> None:
+    """Declared cascades resolve, and a fact that can orphan rows has one.
+
+    The failure this prevents is indirect and therefore slow to find: a parent
+    rejected in silver leaves its children behind, no rule fires because a
+    child is valid on its own, and the loss only appears when a join two layers
+    later discards them.
+    """
+    silver = specs.get("fabric/04-silver", {}).get("doc")
+    if not silver:
+        return
+
+    targets = {t["target"] for t in silver.get("tables") or []}
+    cascades = silver.get("cascade_quarantine") or []
+    errors: list[str] = []
+
+    for cascade in cascades:
+        where = f"{cascade['child']} <- {cascade['parent']}"
+        for side in ("child", "parent"):
+            if cascade[side] not in targets:
+                errors.append(f"cascade {where}: {side} {cascade[side]!r} is not "
+                              f"a silver table")
+        if cascade["child"] == cascade["parent"]:
+            errors.append(f"cascade {where}: a table cannot cascade to itself")
+
+    # A gold join that quarantines orphans is compensating for something silver
+    # let through. Better to catch it at the layer that made the decision.
+    gold = specs.get("fabric/05-gold", {}).get("doc") or {}
+    covered = {(c["child"], c["parent"]) for c in cascades}
+    for fact in gold.get("facts") or []:
+        for join in fact.get("joins") or []:
+            if join.get("on_unmatched") != "quarantine":
+                continue
+            child = (fact.get("source") or "").rsplit(".", 1)[-1]
+            parent = (join.get("table") or "").rsplit(".", 1)[-1]
+            if child and parent and (child, parent) not in covered:
+                report.warn(
+                    "cascade",
+                    f"{fact['name']} quarantines rows unmatched against "
+                    f"{parent}, but no cascade_quarantine propagates "
+                    f"{parent} rejections to {child}. Gold is compensating for "
+                    f"a loss silver could attribute to its cause.")
+
+    if errors:
+        for error in errors:
+            report.error("cascade", error)
+    elif cascades:
+        report.ok(f"cascade: {len(cascades)} parent/child rejection rule(s) resolve")
+
+
 def check_promotion(specs: dict, report: Report) -> None:
     """The declared promotion mechanism matches the rest of the spec.
 
@@ -1147,6 +1197,7 @@ SEMANTIC_CHECKS = (
     check_defect_handlers,
     check_view_dialect,
     check_discarded_rows,
+    check_cascade_quarantine,
     check_promotion,
     check_rule_coverage,
     check_layer_chain,

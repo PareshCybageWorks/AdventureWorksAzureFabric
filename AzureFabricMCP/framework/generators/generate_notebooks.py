@@ -804,12 +804,16 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
                 f'# instead of leaving only a gap in a total.\n'
                 f'_orphans = df.join({table}.select("{key}"), on="{key}", how="left_anti")\n'
                 f'_orphan_count = _orphans.count()\n'
-                f'if _orphan_count:\n'
-                f'    (_orphans\n'
-                f'        .withColumn("_quarantined_at", F.current_timestamp())\n'
-                f'        .withColumn("_reason", F.lit("no matching {key} in {table}"))\n'
-                f'        .write.mode("overwrite").option("mergeSchema", "true")\n'
-                f'        .saveAsTable("{quarantine}"))\n'
+                f'\n'
+                f'# Written ALWAYS, including when empty. Skipping the write on a\n'
+                f'# clean run leaves the previous run\'s rows in place, and an\n'
+                f'# empty result is exactly when someone trusts what they see --\n'
+                f'# so a stale table reads as "these orphans are current".\n'
+                f'(_orphans\n'
+                f'    .withColumn("_quarantined_at", F.current_timestamp())\n'
+                f'    .withColumn("_reason", F.lit("no matching {key} in {table}"))\n'
+                f'    .write.mode("overwrite").option("overwriteSchema", "true")\n'
+                f'    .saveAsTable("{quarantine}"))\n'
                 f'print(f"quarantined {{_orphan_count:,}} row(s) to {quarantine}")\n'
             )
 
@@ -985,6 +989,70 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def cascade_notebook(platform: dict, silver: dict) -> dict:
+    """Propagate parent rejections to their children, after the whole layer.
+
+    A separate notebook rather than a cell on either table, because it can
+    belong to neither: the parent is cleansed after the child wherever a header
+    is corrected from its lines, so at the time the child is written it is not
+    yet known which parents survive.
+    """
+    cascades = silver["cascade_quarantine"]
+    suffix = ((silver.get("defaults") or {}).get("quarantine") or {}).get(
+        "table_suffix", "_quarantine")
+    storage = platform.get("storage") or {}
+    silver_item = ((storage.get("items") or {}).get("medallion") or {}).get(
+        "silver", {}).get("name", "lh_silver")
+
+    cells = [
+        markdown_cell(
+            "# Cascade quarantine\n\n"
+            "Generated from `fabric/04-silver.yaml` — do not edit by hand.\n\n"
+            "A row rejected at one table orphans its children at every table "
+            "below it, and nothing notices: the children are valid in "
+            "isolation, so no rule fires and they travel on until a join in a "
+            "later layer discards them silently.\n\n"
+            "This runs **after** every silver table is built. It cannot be "
+            "part of a child's own build — a parent is often cleansed after "
+            "its child, because an order header is corrected from its lines."
+        ),
+        code_cell(
+            "from datetime import datetime, timezone\n"
+            "\n"
+            "from ttfabric.cleansing import cascade_quarantine\n"
+            "\n"
+            f"CASCADES = {pprint.pformat(cascades, width=84, sort_dicts=False)}\n"
+            f"QUARANTINE_SUFFIX = {suffix!r}\n"
+            "\n"
+            "load_id = f\"load_{datetime.now(timezone.utc):%Y%m%d_%H%M%S}\"\n"
+            "print(f\"cascade run {load_id}\")\n"
+        ),
+        code_cell(
+            "total = 0\n"
+            "for rule in CASCADES:\n"
+            "    result = cascade_quarantine(\n"
+            "        spark,\n"
+            "        child=rule['child'],\n"
+            "        parent=rule['parent'],\n"
+            "        join_on=rule['join_on'],\n"
+            "        reason=rule['reason'],\n"
+            "        load_id=load_id,\n"
+            "        quarantine_suffix=QUARANTINE_SUFFIX,\n"
+            "    )\n"
+            "    total += result['quarantined']\n"
+            "    print(f\"  {result['child']:<20} <- {result['parent']:<14} \"\n"
+            "          f\"{result['quarantined']:>7,} row(s) quarantined\")\n"
+            "\n"
+            "# Zero is the healthy state once upstream is clean. It is reported\n"
+            "# rather than asserted: the rows are a defect to fix, not a reason\n"
+            "# to stop the layer that correctly identified them.\n"
+            "print(f\"\\n{total:,} row(s) cascaded in total\")\n"
+        ),
+    ]
+
+    return notebook(cells, default_lakehouse=silver_item)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--specs", required=True)
@@ -1026,6 +1094,11 @@ def main() -> int:
     for table in silver.get("tables", []):
         planned[out_dir / name_for("silver", table["target"])] = render(
             silver_notebook(platform, table, silver.get("defaults", {}))
+        )
+
+    if silver.get("cascade_quarantine"):
+        planned[out_dir / "nb_cascade_quarantine.ipynb"] = render(
+            cascade_notebook(platform, silver)
         )
 
     for dim in gold.get("dimensions", []):

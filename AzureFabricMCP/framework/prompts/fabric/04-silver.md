@@ -79,6 +79,41 @@ merge duplicates.
 is fully rebuilt each run; an appended quarantine accumulates rejects from every
 previous build and breaks the layer identity across runs.
 
+## Step 5 — Cascade rejections to children
+
+A row rejected here orphans its children in every table below. **Nothing
+notices**: the child rows are valid in isolation, so no rule fires, and they
+travel on until a join in a later layer discards them silently.
+
+That is precisely how 999 quarantined orders left 2,945 of their lines behind,
+which gold's inner join then dropped — putting ₹15,837,278 outside every report,
+traceable only as a reconciliation gap nobody was measuring yet.
+
+Declare it at **layer level**, not on a table:
+
+```yaml
+cascade_quarantine:
+  - child: stg_order_items
+    parent: stg_orders
+    join_on: order_id
+    reason: parent order failed cleansing
+```
+
+**It runs as a post-pass, after every table in the layer.** It cannot live in
+the child's own build: a parent is often cleansed *after* its child — an order
+header is corrected from its lines, so `stg_orders depends_on stg_order_items` —
+and until the whole layer is built, which parents survived is not yet known.
+The generator emits `nb_cascade_quarantine` and the pipeline runs it last.
+
+State the **cause** in `reason` ("parent order failed cleansing"), not the
+symptom a later layer would report ("no matching order_id").
+
+> **This appends to the quarantine table, which Step 4 says must be
+> `overwrite`.** Not a contradiction: cleansing overwrites it earlier in the
+> same run, and the cascade appends to that fresh table afterwards. The layer
+> identity holds because both happen within one run — an append that outlived
+> the run would break it exactly as Step 4 describes.
+
 ## Adding a rule
 
 1. Write the function in `ttfabric/cleansing.py`, returning `(kept, rejected)`

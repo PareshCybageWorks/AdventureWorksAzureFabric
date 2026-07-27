@@ -587,3 +587,63 @@ def get_rule(name: str) -> Callable[..., RuleResult]:
             f"Available: {', '.join(sorted(REGISTRY))}"
         )
     return REGISTRY[name]
+
+
+# ---------------------------------------------------------------------------
+# Cascading quarantine
+# ---------------------------------------------------------------------------
+
+def cascade_quarantine(
+    spark,
+    child: str,
+    parent: str,
+    join_on: str,
+    reason: str,
+    load_id: str,
+    quarantine_suffix: str = "_quarantine",
+) -> dict:
+    """Quarantine child rows whose parent did not survive cleansing.
+
+    A row rejected at one table orphans its children at every table below it.
+    Nothing notices: the child rows are still valid in isolation, so no rule
+    fires, and they travel on until a join in a later layer silently discards
+    them -- which is how 2,945 order lines worth 15.8M ended up outside every
+    report with the only trace being a reconciliation gap.
+
+    Quarantining them HERE attributes the loss to the decision that caused it
+    ("parent order failed cleansing") rather than to its symptom two layers
+    later ("no matching order_id"), and puts the record in the same place as
+    every other rejection from this run.
+
+    Runs as a POST-PASS over the whole layer, not inside either table's build.
+    It cannot be part of the child's own build: the parent is often cleansed
+    after the child -- an order header is corrected FROM its lines -- so at the
+    time the child is written, which parents survive is not yet known.
+
+    Appends to the child's existing quarantine table rather than replacing it,
+    because cleansing has already written this run's row-level rejections there.
+    """
+    from pyspark.sql import functions as F
+
+    child_df = spark.read.table(child)
+    parent_keys = spark.read.table(parent).select(join_on).distinct()
+
+    orphaned = child_df.join(parent_keys, on=join_on, how="left_anti")
+    count = orphaned.count()
+    if not count:
+        return {"child": child, "parent": parent, "quarantined": 0}
+
+    (orphaned
+        .withColumn("_rejected_by", F.lit("cascade_quarantine"))
+        .withColumn("_rejected_at", F.current_timestamp())
+        .withColumn("_load_id", F.lit(load_id))
+        .withColumn("_reason", F.lit(reason))
+        .write.mode("append").option("mergeSchema", "true")
+        .saveAsTable(f"{child}{quarantine_suffix}"))
+
+    # The child is rewritten without them, so every table below this layer sees
+    # a set with no dangling references and nothing further has to compensate.
+    kept = child_df.join(parent_keys, on=join_on, how="left_semi")
+    kept.write.mode("overwrite").option("overwriteSchema", "true").saveAsTable(child)
+
+    return {"child": child, "parent": parent, "quarantined": count}

@@ -136,6 +136,16 @@ def build_silver(platform: dict, silver: dict) -> dict:
         # depends_on names silver TARGETS; map them to their notebook names.
         upstream = [nb(dep) for dep in table.get("depends_on", [])]
         activities.append(notebook_activity(nb(table["target"]), upstream))
+
+    # The cascade runs last, after EVERY table. It cannot sit next to either
+    # side of a parent/child pair: a parent is often cleansed after its child
+    # (an order header is corrected from its lines), so until the whole layer
+    # is built it is not known which parents survived.
+    if silver.get("cascade_quarantine"):
+        activities.append(notebook_activity(
+            "nb_cascade_quarantine",
+            [nb(t["target"]) for t in silver["tables"]]))
+
     return wrap(activities)
 
 

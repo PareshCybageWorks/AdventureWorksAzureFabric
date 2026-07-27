@@ -203,6 +203,38 @@
           }
         }
       }
+    },
+    "cascade_quarantine": {
+      "type": "array",
+      "description": "Parent/child rejections to propagate after the whole layer is built. A row rejected at one table orphans its children at every table below it, and nothing notices -- the children are valid in isolation, so no rule fires and they travel on until a join in a later layer discards them silently. Declared at layer level, not on a table, because it must run as a post-pass: a parent is often cleansed AFTER its child (an order header is corrected from its lines), so at the time the child is written it is not yet known which parents survive.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "child",
+          "parent",
+          "join_on",
+          "reason"
+        ],
+        "properties": {
+          "child": {
+            "type": "string",
+            "description": "Table whose rows are removed."
+          },
+          "parent": {
+            "type": "string",
+            "description": "Table whose survival decides it."
+          },
+          "join_on": {
+            "type": "string",
+            "description": "Named join_on, not on -- a bare `on:` key parses as boolean true under YAML 1.1."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Recorded against each quarantined row. State the CAUSE ('parent order failed cleansing'), not the symptom ('no matching order_id')."
+          }
+        }
+      }
     }
   },
   "$defs": {
