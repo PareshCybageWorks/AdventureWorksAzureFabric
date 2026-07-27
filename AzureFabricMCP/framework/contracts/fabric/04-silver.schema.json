@@ -1,0 +1,397 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://techtonic.io/fabric/contracts/fabric/04-silver.schema.json",
+  "title": "Fabric Silver Mapping",
+  "description": "Stage 4 of the Fabric track. Cleansing and conforming -- the first layer anyone should trust.\n\nTwo rules govern everything here:\n\n1. Nothing is dropped silently. Every rule that rejects a row names a quarantine table. A row that vanishes without a reason recorded is a bug, not a cleansing step.\n\n2. Every rule maps to a named function in the framework library. The generator emits calls, never bespoke logic, so cleansing behaviour is unit-tested once and reused rather than reimplemented per entity.\n\nSilver holds cleansed CURRENT state (SCD type 1) and is named `stg_*`. History tracking with surrogate keys belongs to gold, so the point where history begins is explicit and lives in one place.\n\nAUTHORITATIVE -- a non-conforming spec fails the build.",
+  "type": "object",
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata",
+    "defaults",
+    "tables"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "apiVersion": {
+      "const": "fabric.techtonic.io/v1"
+    },
+    "kind": {
+      "const": "LayerMapping"
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "layer",
+        "domain"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "layer": {
+          "const": "silver"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "scaffolding_ref": {
+          "type": "string"
+        },
+        "sources_ref": {
+          "type": "string"
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "required": [
+        "write_mode",
+        "format",
+        "quarantine"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "write_mode": {
+          "const": "overwrite",
+          "description": "Silver is derived and fully rebuildable from bronze."
+        },
+        "format": {
+          "enum": [
+            "delta",
+            "parquet"
+          ]
+        },
+        "scd": {
+          "enum": [
+            "type1"
+          ]
+        },
+        "quarantine": {
+          "type": "object",
+          "required": [
+            "enabled",
+            "table_suffix"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "const": true,
+              "description": "Not optional. Without a quarantine table a rejected row disappears with no record, and the layer identity count(bronze) == count(silver) + count(quarantine) cannot hold."
+            },
+            "table_suffix": {
+              "type": "string"
+            },
+            "retain_days": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "write_mode": {
+              "enum": [
+                "overwrite"
+              ],
+              "description": "Must match silver's own mode. Silver is rebuilt each run, so an appended quarantine accumulates rejects from previous builds and breaks the layer identity across runs."
+            }
+          }
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Declaration order is dependency order. A table whose rule rolls up from another must be declared after it.",
+      "items": {
+        "type": "object",
+        "required": [
+          "target",
+          "source",
+          "description",
+          "business_key",
+          "columns",
+          "rules"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^stg_[a-z0-9_]+$",
+            "description": "Silver holds cleansed STAGING. Naming it dim_/fct_ overstates what it is and puts dim_customers one character from gold's dim_customer."
+          },
+          "source": {
+            "type": "string",
+            "pattern": "^bronze_[a-z0-9_]+$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "load_pattern": {
+            "enum": [
+              "full_refresh",
+              "incremental"
+            ]
+          },
+          "business_key": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "The key that identifies the THING, not the surrogate id. For customers this is usually email: a retried load re-delivers the same person under the same id, but a re-registration produces a new id for the same person. Deduplication keys off this."
+          },
+          "surrogate_key": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Silver tables that must be built first, e.g. a header that recomputes its total from already-corrected lines."
+          },
+          "columns": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/column"
+            }
+          },
+          "rules": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/rule"
+            }
+          }
+        }
+      }
+    },
+    "reconciliation": {
+      "type": "array",
+      "description": "Assertions over the layer as a whole -- things no single-table rule can establish.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "description",
+          "assertion",
+          "on_failure"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^SILVER-RECON-[0-9]{3}$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "assertion": {
+            "type": "string"
+          },
+          "on_failure": {
+            "enum": [
+              "fail",
+              "warn"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ruleName": {
+      "description": "GENERATED from ttfabric/cleansing.py REGISTRY by generators/sync_contract_rules.py. Do not edit by hand -- add the function to the library, register it, and re-run the sync. validate.py fails if this list drifts from the library.",
+      "enum": [
+        "add_record_hash",
+        "apply_transforms",
+        "cast_types",
+        "deduplicate",
+        "default_nulls",
+        "drop_null_business_key",
+        "drop_null_required",
+        "enforce_allowed_values",
+        "enforce_referential_integrity",
+        "mask_pii",
+        "quarantine_invalid_price",
+        "quarantine_negative_total",
+        "recompute_items_count",
+        "recompute_subtotal",
+        "recompute_total_from_lines",
+        "validate_positive"
+      ]
+    },
+    "column": {
+      "type": "object",
+      "required": [
+        "target",
+        "type"
+      ],
+      "additionalProperties": false,
+      "description": "additionalProperties is false because in YAML flow style an unquoted comma ends the value, silently turning the remainder of a description into a null-valued key.",
+      "properties": {
+        "source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Null for a derived column, which must then carry an `expression`."
+        },
+        "target": {
+          "type": "string",
+          "pattern": "^[a-z_][a-z0-9_]*$"
+        },
+        "type": {
+          "enum": [
+            "string",
+            "integer",
+            "bigint",
+            "decimal",
+            "boolean",
+            "date",
+            "timestamp"
+          ]
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scale": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "key": {
+          "enum": [
+            "natural",
+            "business",
+            "foreign",
+            "surrogate"
+          ]
+        },
+        "transforms": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "trim",
+              "lower",
+              "upper",
+              "title_case"
+            ]
+          }
+        },
+        "expression": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "allowed_values": {
+          "type": "array",
+          "items": {}
+        },
+        "default_when_null": {},
+        "on_violation": {
+          "enum": [
+            "quarantine",
+            "warn",
+            "default"
+          ]
+        },
+        "pii": {
+          "enum": [
+            "name",
+            "email",
+            "phone",
+            "address",
+            "government_id",
+            "financial",
+            "health"
+          ]
+        },
+        "mask": {
+          "type": "string",
+          "description": "Masking policy name, defined in the DataOps track."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": null
+              }
+            },
+            "required": [
+              "source"
+            ]
+          },
+          "then": {
+            "required": [
+              "expression"
+            ],
+            "description": "A column with no source must say how it is derived."
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "decimal"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "precision",
+              "scale"
+            ]
+          }
+        }
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "required": [
+        "fn"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fn": {
+          "$ref": "#/$defs/ruleName"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "handles": {
+          "type": "string",
+          "pattern": "^[A-Z]+-[0-9]{3}$",
+          "description": "The known_issues id from 02-sources this rule deals with. Makes a rule read as a deliberate response to a named defect, and lets the validator prove every documented defect is handled."
+        },
+        "on_reject": {
+          "enum": [
+            "quarantine",
+            "correct_and_flag",
+            "fail"
+          ],
+          "description": "quarantine: the row is wrong and unrepairable. correct_and_flag: repairable from trustworthy inputs, corrected in place with the original retained and a flag raised. Choosing quarantine where correction is possible discards real data to punish an arithmetic error."
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

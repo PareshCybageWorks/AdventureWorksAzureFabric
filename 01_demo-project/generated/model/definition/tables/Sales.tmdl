@@ -1,0 +1,198 @@
+/// One row per order line. Grain is order_id + order_item_id; every measure below aggregates from this grain.
+table Sales
+	lineageTag: 704d5e96-2728-5185-9bef-8b7a72278ddd
+
+	/// Degenerate dimension -- the order this line belonged to.
+	column 'Order ID'
+		dataType: string
+		sourceColumn: order_id
+		summarizeBy: none
+		lineageTag: 5eb36934-22b8-53de-a5cb-8088f4b0bc4a
+
+	column 'Order Line ID'
+		dataType: string
+		isHidden
+		sourceColumn: order_item_id
+		summarizeBy: none
+		lineageTag: 49770dcc-aa7a-5630-a7ee-10f061dcf089
+
+	column Quantity
+		dataType: int64
+		isHidden
+		sourceColumn: quantity
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: 2d3069c7-dc09-557b-86fb-485ff031ab59
+
+	column 'Unit Price'
+		dataType: decimal
+		isHidden
+		sourceColumn: unit_price
+		summarizeBy: none
+		formatString: "₹"#,0.00
+		lineageTag: 0cc2be76-3ecb-5721-9f38-0568a5e3be26
+
+	column 'Line Revenue'
+		dataType: decimal
+		isHidden
+		sourceColumn: line_revenue
+		summarizeBy: none
+		formatString: "₹"#,0.00
+		lineageTag: aca094cb-d32b-5f7e-9214-17d873dd8b9a
+
+	/// Revenue on delivered orders only. Differs from Line Revenue by the value of orders still in flight -- the gap is the point, not an error.
+	column 'Line Recognised Revenue'
+		dataType: decimal
+		isHidden
+		sourceColumn: recognised_revenue
+		summarizeBy: none
+		formatString: "₹"#,0.00
+		lineageTag: 32fee1ae-57ba-51a1-85f1-09fafab5f6df
+
+	column 'Line Cost'
+		dataType: decimal
+		isHidden
+		sourceColumn: line_cost
+		summarizeBy: none
+		formatString: "₹"#,0.00
+		lineageTag: 98fc170f-4e12-53be-9292-78de39c8aa34
+
+	column 'Line Gross Margin'
+		dataType: decimal
+		isHidden
+		sourceColumn: gross_margin
+		summarizeBy: none
+		formatString: "₹"#,0.00
+		lineageTag: 7eaac6e0-a743-5cb8-97b0-706504ae1eed
+
+	/// Set where silver recomputed a subtotal that disagreed with quantity x unit_price. Surfaced, not hidden: it is the evidence that cleansing did something.
+	column 'Subtotal Was Corrected'
+		dataType: boolean
+		sourceColumn: subtotal_was_corrected
+		summarizeBy: none
+		lineageTag: 6bae700e-6e2e-5409-9923-f20019d2a00f
+
+	column customer_sk
+		dataType: int64
+		isHidden
+		sourceColumn: customer_sk
+		summarizeBy: none
+		lineageTag: cc426bc0-999e-5b85-b33d-044961205e8c
+
+	column order_date_sk
+		dataType: int64
+		isHidden
+		sourceColumn: order_date_sk
+		summarizeBy: none
+		lineageTag: 9405e450-b2c0-5e6a-bb1e-d2ef127dd100
+
+	column product_sk
+		dataType: int64
+		isHidden
+		sourceColumn: product_sk
+		summarizeBy: none
+		lineageTag: e3f1af26-6182-53ee-b966-1018e931ca9d
+
+	/// Distinct orders, not order lines. One order with four lines counts once.
+	measure Orders = DISTINCTCOUNT(Sales[Order ID])
+		formatString: #,0
+		displayFolder: Volume
+		lineageTag: 2b227c94-86ac-5223-877a-97877cc33b63
+
+	measure 'Order Lines' = COUNTROWS(Sales)
+		formatString: #,0
+		displayFolder: Volume
+		lineageTag: 49946a8c-ef5c-5b4e-8eeb-9aa84b2957ed
+
+	measure 'Units Sold' = SUM(Sales[Quantity])
+		formatString: #,0
+		displayFolder: Volume
+		lineageTag: 6bfd1619-535f-546a-9fc5-c849fd5d4223
+
+	/// Distinct customers who bought in context. Counts surrogate keys, so a customer whose record changed mid-period counts once per version -- accept that, or count Customer[Customer ID] to count people.
+	measure Customers = DISTINCTCOUNT(Sales[customer_sk])
+		formatString: #,0
+		displayFolder: Volume
+		lineageTag: b794c1a4-6ee0-51e2-8cf3-226f1ea39488
+
+	/// Billed revenue across all order lines, regardless of delivery status.
+	measure Revenue = SUM(Sales[Line Revenue])
+		formatString: "₹"#,0
+		displayFolder: Revenue
+		lineageTag: 4e191c36-cd63-5e69-81c0-bab984a497e0
+
+	/// Revenue on delivered orders only. This is the number finance recognises; Revenue is the number sales books.
+	measure 'Recognised Revenue' = SUM(Sales[Line Recognised Revenue])
+		formatString: "₹"#,0
+		displayFolder: Revenue
+		lineageTag: 34444cbc-d8bf-5a5f-aace-bd6dfe51b06e
+
+	/// Billed but not yet delivered. Rises when fulfilment slows.
+	measure 'Revenue In Flight' = [Revenue] - [Recognised Revenue]
+		formatString: "₹"#,0
+		displayFolder: Revenue
+		lineageTag: 5fb491b6-7ab0-5552-8b65-235cf1a3e240
+
+	/// DIVIDE, not "/", so a period with no orders returns blank instead of an error.
+	measure 'Average Order Value' = DIVIDE([Revenue], [Orders])
+		formatString: "₹"#,0
+		displayFolder: Revenue
+		lineageTag: 1040d073-a03e-534e-ba67-a280ca08e90a
+
+	measure 'Gross Margin' = SUM(Sales[Line Gross Margin])
+		formatString: "₹"#,0
+		displayFolder: Profitability
+		lineageTag: f3106fa0-c64c-547d-88f9-49bf541ec229
+
+	measure 'Gross Margin %' = DIVIDE([Gross Margin], [Revenue])
+		formatString: 0.0%
+		displayFolder: Profitability
+		lineageTag: fb4541ef-8c84-50a9-84e8-141a5a8bf97a
+
+	measure Cost = SUM(Sales[Line Cost])
+		formatString: "₹"#,0
+		displayFolder: Profitability
+		lineageTag: ad1f6b93-88b7-58bb-ab72-a29838ce72ea
+
+	measure 'Revenue LY' = CALCULATE([Revenue], SAMEPERIODLASTYEAR('Date'[Date]))
+		formatString: "₹"#,0
+		displayFolder: Time Intelligence
+		lineageTag: b6f7397b-9c0f-5734-b774-9fd164232303
+
+	/// Blank where there is no prior-year comparison, rather than a misleading 100%.
+	measure 'Revenue YoY %' = DIVIDE([Revenue] - [Revenue LY], [Revenue LY])
+		formatString: 0.0%
+		displayFolder: Time Intelligence
+		lineageTag: 249175f7-107c-5a35-8c16-6af624ebed5d
+
+	measure 'Revenue YTD' = TOTALYTD([Revenue], 'Date'[Date])
+		formatString: "₹"#,0
+		displayFolder: Time Intelligence
+		lineageTag: 18a0749a-3251-59e3-920f-527bf07ba3a9
+
+	measure 'Revenue Rolling 3M' =
+			CALCULATE(
+			    [Revenue],
+			    DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -3, MONTH)
+			)
+		formatString: "₹"#,0
+		displayFolder: Time Intelligence
+		lineageTag: 28f40c84-66a9-5523-9e90-2b3fa6dad9a1
+
+	measure 'Corrected Lines' = CALCULATE(COUNTROWS(Sales), Sales[Subtotal Was Corrected] = TRUE())
+		formatString: #,0
+		displayFolder: Data Quality
+		lineageTag: dd0dda13-55be-50df-812e-d2f51a45fa3c
+
+	/// Share of order lines whose subtotal silver had to recompute.
+	measure 'Corrected Lines %' = DIVIDE([Corrected Lines], [Order Lines])
+		formatString: 0.00%
+		displayFolder: Data Quality
+		lineageTag: 340b2889-cd88-5818-9eaa-ae4d06e684ac
+
+	partition Sales = entity
+		mode: directLake
+		source
+			entityName: fct_sales
+			schemaName: dbo
+			expressionSource: DatabaseQuery

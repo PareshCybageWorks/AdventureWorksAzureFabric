@@ -1,0 +1,170 @@
+# Stage F1 — Fabric Scaffolding
+
+**Track:** Fabric  **Stage:** 1 of 5  **Produces:** `fabric/01-scaffolding.yaml`
+**Contract:** `framework/contracts/fabric/01-scaffolding.schema.json` (authoritative)
+
+---
+
+## Purpose
+
+Define the platform the project runs **on** — tenant, capacity, topology, domains,
+environment workspaces, storage items, naming. Nothing about *data* belongs here.
+
+Everything downstream resolves names and placement from this spec, so a value
+that is wrong here is wrong in every generated notebook, pipeline and report.
+
+## When to use
+
+- Starting a new Fabric project
+- Adding an environment or a domain to an existing one
+- Switching topology between medallion and mesh
+
+## Preconditions
+
+Refuse to proceed and say why if any of these is unmet:
+
+- [ ] A Fabric capacity exists and its SKU is known
+- [ ] The operator can name the target tenant/region
+- [ ] `az login` is active, or a service principal is available
+
+---
+
+## Step 1 — Ask, do not assume
+
+Five answers cannot be inferred from a codebase. Ask them; never default silently.
+
+**1. Topology — medallion or mesh?**
+
+Do not just take the answer. Test it:
+
+> "Does more than one team own a pipeline end to end, with independent release
+> cadences?"
+
+Mesh pays for its overhead only when **all** of: multiple teams, independent
+release cadences, and a platform-team bottleneck that decentralising would
+relieve. One team building a first framework meets none. Recommend medallion,
+and record the reasoning in `topology.rationale` — the contract requires it, and
+enforces a minimum length, because an undocumented topology choice gets
+re-litigated by every new joiner.
+
+**2. Which capacity, and is it a trial?**
+
+Get the SKU, not just the name. **An F2 has 2 capacity units and cannot run
+Spark at any useful speed** — a pipeline lands on it and simply crawls, with no
+error to explain why. If the answer is a trial, set `is_trial: true`: a trial
+expires and takes *every* environment's compute with it at the same moment.
+
+Never infer capacity from "whatever workspace we saw first".
+
+**3. Which environments, and what is production called?**
+
+Production frequently carries the *shortest* name of the set — `AgenticAIDemo`
+beside `AgenticAIDemo_dev`. That makes it the easiest to hit by accident. Set
+`is_production: true` on it, and make sure the operator knows every destructive
+operation must resolve that workspace **by id, never by name**.
+
+**4. What are the domains?**
+
+Ask even when the answer is "just one". `domain` must be a first-class field
+from day one — without it, switching to mesh later means rewriting every spec
+instead of changing one line.
+
+**5. Where does gold live — Warehouse or Lakehouse?**
+
+Choose Warehouse (`wh_gold`) when gold needs real T-SQL schemas, views, or a SQL
+surface for BI tools. Choose Lakehouse only when gold is consumed exclusively by
+Spark. That is rarer than it sounds — Power BI, Excel and most BI tools want SQL.
+
+---
+
+## Step 2 — Derive what you can
+
+Do not ask about these. Derive them and state what you chose:
+
+| Field | Rule |
+|---|---|
+| `storage.items` | Follows topology. medallion → per LAYER (`lh_bronze`, `lh_silver`, `wh_gold`). mesh → per DOMAIN (`wh_{domain}`). The split follows whichever axis owns the data. |
+| `naming.tables.silver` | `stg_{entity}`. Silver holds cleansed **staging**, not a dimensional model. |
+| `naming.tables.gold_*` | `dim_{entity}` / `fct_{entity}`. |
+| `naming.verbs` | `load` / `clean` / `build`. The layer is already carried by the storage item and the folder; repeating it yields `nb_bronze_bronze_commerce_orders`. |
+| `workspace_folders` | `0_config` … `5_datastore`, each layer folder splitting into `notebook/` and `pipeline/`. Numeric prefixes force medallion order in an alphabetical UI. |
+
+## Step 3 — Write the spec
+
+Emit `fabric/01-scaffolding.yaml` conforming to the contract. Copy
+`framework/templates/fabric/01-scaffolding.yaml` as the starting point.
+
+Secrets are **references**, never values: `keyvault://vault/secret-name` or
+`${ENV_VAR}`. The contract rejects anything that looks like a literal secret.
+
+## Step 4 — Validate
+
+```bash
+python framework/generators/validate.py --project <project> --stage fabric/01-scaffolding
+```
+
+Authoritative: a non-conforming spec **fails**. Do not proceed to provisioning
+with validation errors outstanding.
+
+## Step 5 — Provision
+
+```bash
+python framework/deploy/create_workspaces.py --project <project> --capacity <id>
+python framework/deploy/provision_items.py  --project <project> --env dev
+python framework/deploy/organise_items.py   --project <project> --env dev
+```
+
+Record the resulting ids back into `environments[].provisioned_items`, so the
+spec and the tenant agree. An id recorded nowhere gets rediscovered by hand
+every time.
+
+---
+
+## Exit gate
+
+Stage F1 is done when **all** hold:
+
+- [ ] `validate.py` passes with zero errors
+- [ ] Every environment has a real `workspace_id`
+- [ ] Storage items exist and match `storage.items` for the active topology
+- [ ] Items are filed per `workspace_folders`
+- [ ] `topology.rationale` explains the choice in words
+- [ ] Production is marked `is_production: true`
+
+Only then proceed to **F2 — Sources**.
+
+---
+
+## Failure modes seen in practice
+
+Each of these cost real debugging time. They are listed because none announced
+itself as an error.
+
+**Capacity picked by accident.** Defaulting to "the first workspace's capacity"
+silently selected an F2. Spark ran, slowly, with nothing to indicate why. Derive
+capacity explicitly or refuse to guess.
+
+**Item creation cannot set a folder.** Neither the MCP nor the REST create-item
+call accepts one, so every item is born at the workspace root. Folder placement
+is a separate step (`organise_items.py`). Treat a mismatch between spec and
+workspace as drift to correct, not as the spec being aspirational.
+
+**Gold written to the silver lakehouse.** A notebook's default lakehouse cannot
+be a Warehouse, so gold notebooks default to the lakehouse they *read* from —
+and an unqualified `saveAsTable` lands there. Gold tables ended up beside silver
+under names one character apart (`dim_customer` vs `dim_customers`). Route every
+gold write through the configured target; never write unqualified.
+
+**The warehouse connector supports overwrite only.** `append` fails with
+`Write orchestration failed` and no root cause. Read, union, overwrite.
+
+**A workspace name is not an identity.** Names get renamed; ids do not. Record
+ids and resolve destructive operations by id.
+
+---
+
+## Related
+
+- `framework/skills/fabric/lakehouse-warehouse-topology.md` — the medallion vs mesh decision in depth
+- `framework/contracts/fabric/01-scaffolding.schema.json` — the authoritative shape
+- Next stage: `framework/prompts/fabric/02-sources.md`

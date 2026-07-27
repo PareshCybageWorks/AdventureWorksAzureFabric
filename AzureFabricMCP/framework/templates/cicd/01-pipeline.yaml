@@ -1,0 +1,143 @@
+version: 1
+
+# =============================================================================
+# C1 CI/CD -- <project>
+# =============================================================================
+# Copy to <project>/cicd/01-pipeline.yaml and fill in.
+# Contract: framework/contracts/cicd/01-pipeline.schema.json
+#
+# STEP PATHS ARE RELATIVE TO THE REPOSITORY ROOT, not to the framework folder.
+# Every `python <path>` is resolved at validation, because a bad path otherwise
+# fails on someone else's pull request.
+# =============================================================================
+
+metadata:
+  name: <project>
+
+deployment_pipeline:
+  name: dp-<project>
+  stages:
+    - name: Development
+      environment: dev
+    - name: QA
+      environment: qa
+    - name: UAT
+      environment: uat
+      requires_approval: true
+    - name: Production
+      environment: prod
+      requires_approval: true
+  items: [Lakehouse, Warehouse, Notebook, DataPipeline, Environment, SemanticModel, Report]
+  # Excluding something is a decision worth recording. These hold
+  # environment-specific state; promoting them overwrites the target's history.
+  excluded_items: [dq_run_log, schema_migrations]
+
+parameterisation:
+  strategy: placeholders
+  on_missing_parameter: fail    # the only safe default -- an unresolved
+                                # parameter otherwise deploys pointing at the
+                                # previous environment
+
+warehouse_migrations:
+  path: ./generated/migrations
+  strategy: forward_only
+  history_table: dbo.schema_migrations
+  on_drift:
+    action: fail
+
+workflows:
+  - name: ci-validate
+    file: .github/workflows/ci-validate.yml
+    description: Runs on every pull request. Nothing merges without it passing.
+    triggers:
+      pull_request:
+        branches: [dev, qa, main]
+      workflow_dispatch: {}
+    jobs:
+      - id: validate
+        # NOT --strict on a PR. Errors block; warnings are shown but do not.
+        # Blocking every pull request on a quality nudge teaches people to
+        # silence warnings rather than act on them. qa and prod run --strict.
+        steps:
+          - python <framework>/generators/validate.py --project <project>
+
+      - id: unit-tests
+        steps:
+          - python <framework>/tests/test_monitoring.py
+
+      - id: no-drift
+        description: >-
+          Generated artefacts match their specs. Fails if someone edited a
+          generated file by hand instead of the spec it comes from.
+        steps:
+          - python <framework>/generators/generate_notebooks.py --specs <project> --out <project>/generated/notebooks --check
+          - python <framework>/generators/generate_tmdl.py --specs <project> --out <project>/generated/model --check
+
+  - name: cd-deploy-dev
+    file: .github/workflows/cd-deploy-dev.yml
+    triggers:
+      push:
+        branches: [dev]
+    jobs:
+      # `environment` is what carries required reviewers and scoped secrets.
+      # A deploying job without one has no approval gate at all.
+      - id: deploy
+        environment: dev
+        steps:
+          - python <framework>/deploy/push_library.py --project <project> --env dev --wait
+          - python <framework>/deploy/push_items.py --project <project> --env dev --create-missing
+          - python <framework>/deploy/run_migrations.py --project <project> --env dev
+          - python <framework>/deploy/push_semantic_model.py --project <project> --env dev
+          - python <framework>/deploy/push_reports.py --project <project> --env dev
+
+  - name: cd-deploy-prod
+    file: .github/workflows/cd-deploy-prod.yml
+    triggers:
+      push:
+        tags: ["v*"]
+      workflow_dispatch: {}
+    jobs:
+      - id: deploy
+        environment: prod
+        steps:
+          - python <framework>/generators/validate.py --project <project> --strict
+          - python <framework>/deploy/push_items.py --project <project> --env prod --create-missing
+          - python <framework>/deploy/run_migrations.py --project <project> --env prod
+
+gates:
+  # An automated gate needs a job with the SAME id, or nothing enforces it.
+  - id: validate
+    blocks: [dev, qa, uat, prod]
+    automated: true
+
+  - id: no-drift
+    blocks: [qa, uat, prod]      # not dev, where a quick hand edit is fine
+    automated: true
+
+  # Manual gates are enforced by required reviewers on the GitHub Environment,
+  # NOT by anything generated here. A manual gate with no approver is not a gate.
+  - id: manual-approval
+    blocks: [prod]
+    automated: false
+    approvers: [<team>]
+    criteria: <what the approver is confirming>
+
+rollback:
+  strategy: redeploy_previous_tag
+  description: >-
+    Roll forward to the previous tag rather than reversing the change. A forward
+    deployment is a path that has been exercised; a reversal is one that has not.
+  schema_rollback:
+    supported: false
+    mitigation: expand_and_contract
+  rto_minutes: 30
+  rpo_minutes: 60
+
+secrets:
+  store: azure_key_vault
+  vault: <vault-name>
+  # NAMES only. A literal value fails check_secrets.
+  required:
+    - AZURE_CLIENT_ID
+    - AZURE_CLIENT_SECRET
+    - AZURE_TENANT_ID

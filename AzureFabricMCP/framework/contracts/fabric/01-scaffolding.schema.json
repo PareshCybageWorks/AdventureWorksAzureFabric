@@ -1,0 +1,363 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://techtonic.io/fabric/contracts/fabric/01-scaffolding.schema.json",
+  "title": "Fabric Scaffolding",
+  "description": "Stage 1 of the Fabric track. Defines the platform a project runs ON: tenant, capacity, topology, domains, environment workspaces, storage items and naming. Everything downstream resolves names and placement from here, so no generator or notebook hard-codes a workspace, lakehouse or table name.\n\nThis contract is AUTHORITATIVE -- a spec that does not conform fails the build.",
+
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "tenant", "topology", "domains", "environments", "naming", "storage"],
+  "additionalProperties": false,
+
+  "properties": {
+    "apiVersion": { "const": "fabric.techtonic.io/v1" },
+    "kind": { "const": "FabricScaffolding" },
+
+    "metadata": {
+      "type": "object",
+      "required": ["name", "owner"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{2,49}$",
+          "description": "Project identifier. Lowercase kebab-case; appears in generated artefact names."
+        },
+        "description": { "type": "string" },
+        "owner": { "type": "string", "description": "Team accountable for the platform, not an individual." },
+        "contact": { "type": "string" },
+        "framework_path": { "type": "string", "description": "Relative path to the core framework." }
+      }
+    },
+
+    "tenant": {
+      "type": "object",
+      "required": ["region", "capacity"],
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": { "type": "string", "description": "Literal or ${ENV_VAR}. Never a committed secret." },
+        "region": { "type": "string", "description": "Fabric home region, e.g. centralindia." },
+        "onelake_endpoint": { "type": "string", "format": "uri" },
+        "capacity": {
+          "type": "object",
+          "required": ["default_sku"],
+          "additionalProperties": false,
+          "properties": {
+            "default_sku": { "type": "string", "description": "F-SKU or trial. An F2 cannot run Spark usefully -- see the capacity note in the scaffolding prompt." },
+            "default_capacity_id": { "type": "string" },
+            "is_trial": {
+              "type": "boolean",
+              "default": false,
+              "description": "Trial capacity expires. Declaring it here makes the expiry visible in the spec rather than discovered when every environment loses compute at once."
+            },
+            "fallback": {
+              "type": "object",
+              "description": "Where workloads move when the primary capacity ends. Declared so the successor is chosen deliberately rather than grabbed under time pressure -- and so the validator can check it is actually viable.",
+              "required": ["sku"],
+              "additionalProperties": false,
+              "properties": {
+                "sku": { "type": "string" },
+                "capacity_id": { "type": "string" },
+                "note": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "auth": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["service_principal", "interactive"] },
+        "client_id": { "type": "string" },
+        "client_secret_ref": {
+          "type": "string",
+          "description": "A REFERENCE to a secret (keyvault://...), never the secret.",
+          "not": { "pattern": "^[A-Za-z0-9+/=]{20,}$" }
+        }
+      }
+    },
+
+    "topology": {
+      "type": "object",
+      "required": ["pattern", "rationale", "layers"],
+      "additionalProperties": false,
+      "properties": {
+        "pattern": {
+          "enum": ["medallion", "mesh"],
+          "description": "medallion: storage split per LAYER, one workspace per environment. mesh: storage split per DOMAIN, one workspace per domain per environment. The split follows whichever axis owns the data."
+        },
+        "rationale": {
+          "type": "string",
+          "minLength": 40,
+          "description": "Why this pattern, in words. Required and length-checked because an undocumented topology choice gets re-litigated every time someone new joins."
+        },
+        "layers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["name", "purpose"],
+            "additionalProperties": false,
+            "properties": {
+              "name": { "enum": ["bronze", "silver", "gold"] },
+              "purpose": { "type": "string", "minLength": 20 }
+            }
+          }
+        },
+        "mesh_sharing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mechanism": { "enum": ["onelake_shortcut", "copy"] },
+            "publish_layer": { "enum": ["bronze", "silver", "gold"] }
+          }
+        }
+      }
+    },
+
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "description": "A bounded set of source systems and the tables derived from them. Present even with one domain, so switching to mesh is a topology change rather than a spec rewrite.",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "owner"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,29}$" },
+          "description": { "type": "string" },
+          "owner": { "type": "string" },
+          "sources": { "type": "array", "items": { "type": "string" } },
+          "publishes_data_product": { "type": "boolean", "default": false }
+        }
+      }
+    },
+
+    "environments": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Fabric workspaces only. Branch mapping and promotion gates belong to the CI/CD track, not here -- a workspace is scaffolding, a branch is delivery.",
+      "items": {
+        "type": "object",
+        "required": ["name", "workspace"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "enum": ["dev", "qa", "uat", "prod"] },
+          "workspace": { "type": "string", "minLength": 1 },
+          "workspace_id": {
+            "type": ["string", "null"],
+            "description": "Populated on first provision. Null until then.",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "capacity_sku": { "type": "string" },
+          "is_production": {
+            "type": "boolean",
+            "default": false,
+            "description": "Marks the environment destructive operations must never resolve by NAME. Production often carries the shortest, most innocuous name of the set."
+          },
+          "provisioned_items": {
+            "type": "object",
+            "description": "Resolved ids recorded after provisioning, so the spec and the tenant agree.",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+
+    "naming": {
+      "type": "object",
+      "required": ["workspace", "notebook", "pipeline", "tables", "table_prefixes"],
+      "additionalProperties": false,
+      "properties": {
+        "workspace": {
+          "type": "object",
+          "description": "Enumerated per environment rather than templated, because production commonly breaks a {prefix}_{env} pattern by carrying no suffix.",
+          "additionalProperties": true
+        },
+        "notebook": { "type": "string", "pattern": ".*\\{entity\\}.*" },
+        "pipeline": { "type": "string" },
+        "semantic_model": { "type": "string" },
+        "report": { "type": "string" },
+        "deployment_pipeline": { "type": "string" },
+        "verbs": {
+          "type": "object",
+          "description": "Verb per layer, so an item name says what it DOES. The layer is already carried by the storage item and the workspace folder.",
+          "additionalProperties": { "type": "string" }
+        },
+        "pipelines": { "type": "object", "additionalProperties": { "type": "string" } },
+        "tables": {
+          "type": "object",
+          "required": ["bronze", "silver", "gold_dimension", "gold_fact"],
+          "additionalProperties": true,
+          "properties": {
+            "bronze": { "type": "string" },
+            "silver": {
+              "type": "string",
+              "description": "Silver holds cleansed STAGING. Naming it dimensionally overstates what it is and puts dim_customers one character from gold's dim_customer."
+            },
+            "gold_dimension": { "type": "string" },
+            "gold_fact": { "type": "string" },
+            "gold_view": { "type": "string" }
+          }
+        },
+        "table_prefixes": {
+          "type": "object",
+          "required": ["silver", "gold"],
+          "additionalProperties": false,
+          "description": "Enforced by the validator. A convention is only worth having if it cannot drift.",
+          "properties": {
+            "silver": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "gold": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+          }
+        },
+        "casing": { "enum": ["snake_case", "camelCase", "PascalCase"] }
+      }
+    },
+
+    "storage": {
+      "type": "object",
+      "required": ["items", "bronze", "silver", "gold"],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "object",
+          "required": ["medallion", "mesh"],
+          "additionalProperties": false,
+          "description": "Both topologies are declared even though only one is active, so switching is a one-line change to topology.pattern.",
+          "properties": {
+            "medallion": {
+              "type": "object",
+              "required": ["bronze", "silver", "gold"],
+              "additionalProperties": false,
+              "properties": {
+                "bronze": { "$ref": "#/$defs/storageItem" },
+                "silver": { "$ref": "#/$defs/storageItem" },
+                "gold": { "$ref": "#/$defs/storageItem" }
+              }
+            },
+            "mesh": {
+              "type": "object",
+              "required": ["per_domain"],
+              "additionalProperties": false,
+              "properties": { "per_domain": { "$ref": "#/$defs/storageItem" } }
+            }
+          }
+        },
+        "bronze": { "$ref": "#/$defs/layerStorage" },
+        "silver": { "$ref": "#/$defs/layerStorage" },
+        "gold": {
+          "allOf": [{ "$ref": "#/$defs/layerStorage" }],
+          "type": "object",
+          "properties": {
+            "schemas": {
+              "type": "object",
+              "required": ["physical", "reporting"],
+              "additionalProperties": false,
+              "properties": {
+                "physical": { "type": "string", "description": "Star-schema tables written by the gold notebooks." },
+                "reporting": { "type": "string", "description": "Views consumed by Power BI; never read by a pipeline." }
+              }
+            },
+            "write_mode": {
+              "enum": ["warehouse_connector", "lakehouse_staging"],
+              "description": "warehouse_connector: Spark writes to the Warehouse via synapsesql. Supports OVERWRITE ONLY -- append fails with an opaque orchestration error. lakehouse_staging: Delta into a lakehouse, Warehouse exposes dbo over it."
+            },
+            "staging_path": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "workspace_folders": {
+      "type": "array",
+      "description": "Fabric workspace folders organise ITEMS; OneLake paths organise FILES inside a lakehouse. Conflating them is the usual source of confusion. Applied by deploy/organise_items.py -- item creation cannot set a folder.",
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "layer": { "type": ["string", "null"], "enum": ["bronze", "silver", "gold", null] },
+          "description": { "type": "string" },
+          "contains": { "type": "array", "items": { "$ref": "#/$defs/folderEntry" } },
+          "subfolders": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "contains"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "contains": { "type": "array", "items": { "$ref": "#/$defs/folderEntry" } }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "audit_columns": {
+      "type": "object",
+      "description": "Appended by the framework to every table at the named layer. Mappings do not declare these, so the provenance contract is identical across every entity.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["name", "type", "source"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "type": { "enum": ["string", "integer", "bigint", "boolean", "date", "timestamp", "decimal"] },
+            "source": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "conventions": {
+      "type": "object",
+      "description": "Switches the validator enforces before any generation runs.",
+      "additionalProperties": { "type": "boolean" }
+    }
+  },
+
+  "$defs": {
+    "storageItem": {
+      "type": "object",
+      "required": ["item", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "item": { "enum": ["lakehouse", "warehouse"] },
+        "name": { "type": "string", "pattern": "^(lh|wh)_[a-z0-9_{}]+$" }
+      }
+    },
+    "layerStorage": {
+      "type": "object",
+      "required": ["item", "format"],
+      "properties": {
+        "item": { "enum": ["lakehouse", "warehouse"] },
+        "landing_path": { "type": "string" },
+        "table_path": { "type": "string" },
+        "staging_path": { "type": "string" },
+        "format": { "enum": ["delta", "parquet"] },
+        "retention_days": { "type": "integer", "minimum": 1 },
+        "immutable": { "type": "boolean" },
+        "schemas": { "type": "object" },
+        "write_mode": { "type": "string" }
+      }
+    },
+    "folderEntry": {
+      "type": "object",
+      "required": ["item_type"],
+      "additionalProperties": false,
+      "properties": {
+        "item_type": { "enum": ["Notebook", "DataPipeline", "Lakehouse", "Warehouse", "Environment", "SemanticModel", "Report"] },
+        "name": { "type": "string" },
+        "name_pattern": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

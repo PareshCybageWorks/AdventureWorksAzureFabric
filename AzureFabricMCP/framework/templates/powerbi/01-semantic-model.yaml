@@ -1,0 +1,112 @@
+version: 1
+
+# =============================================================================
+# P1 Semantic Model -- <project>
+# =============================================================================
+# Copy to <project>/powerbi/01-semantic-model.yaml and fill in.
+# Contract: framework/contracts/powerbi/01-semantic-model.schema.json
+#
+# Requires F5 Gold: column types are read from fabric/05-gold.yaml.
+# =============================================================================
+
+model:
+  name: sm_<subject>                 # sm_ prefix, lowercase
+  description: >-
+    What this model is for and who uses it.
+  culture: en-US
+
+  # direct_lake  reads OneLake delta files -- no import, no refresh, no copy
+  #              ageing out of date. CANNOT bind to a view.
+  # import       loads a copy; needs a refresh schedule.
+  # direct_query queries the source per visual.
+  storage_mode: direct_lake
+  source:
+    item: wh_gold
+    kind: warehouse                  # warehouse | lakehouse
+
+defaults:
+  hide_columns_matching:
+    - "_*"
+    - "*_sk"
+    - "_tracked_hash"
+
+tables:
+  # --- fact ------------------------------------------------------------------
+  - name: <Fact>                     # business language: "Sales", not "fct_sales"
+    source_table: dbo.fct_<entity>   # physical table -- NOT a bi view
+    kind: fact
+    description: One row per <grain>.
+    columns:
+      # Hide every raw numeric column: report authors aggregate through
+      # measures. Name them "Line ..." so they cannot collide with a measure,
+      # which the model rejects outright.
+      - source: <numeric_column>
+        name: Line <Thing>
+        format: "#,0.00"
+        hidden: true
+
+  # --- dimension -------------------------------------------------------------
+  - name: <Dimension>
+    source_table: dbo.dim_<entity>
+    kind: dimension
+    key: <entity>_sk                 # required on a dimension
+    columns:
+      - source: <business_key>
+        name: <Thing> ID
+      - source: <attribute>
+        name: <Attribute>
+
+  # --- date ------------------------------------------------------------------
+  # Exactly one. Without it, time intelligence returns wrong answers rather
+  # than failing.
+  - name: Date
+    source_table: dbo.dim_date
+    kind: date
+    key: date_sk
+    columns:
+      - source: full_date
+        name: Date
+      - source: month
+        name: Month Number
+        hidden: true
+      - source: month_name
+        name: Month
+        sort_by: Month Number        # DISPLAY name, else the sort is silently absent
+
+relationships:
+  # Surrogate key columns do not need declaring above -- they are injected.
+  - from_table: <Fact>               # the many side
+    from_column: <entity>_sk
+    to_table: <Dimension>            # the one side
+    to_column: <entity>_sk
+    cardinality: many_to_one
+    cross_filter: single             # `both` makes totals wrong without failing
+
+hierarchies:
+  - name: Calendar
+    table: Date
+    levels: [Year, Quarter, Month]   # DISPLAY names, coarse to fine
+
+measures:
+  - name: <Measure>
+    table: <Fact>
+    expression: SUM(<Fact>[Line <Thing>])
+    format: "#,0"
+    display_folder: <Folder>
+    description: >-
+      The business definition. This surfaces as a tooltip in the field list --
+      the only place the definition reaches the person using it.
+
+  # Use DIVIDE, not "/", so an empty denominator returns blank not an error.
+  - name: <Ratio> %
+    table: <Fact>
+    expression: DIVIDE([<Numerator>], [<Denominator>])
+    format: "0.0%"
+    display_folder: <Folder>
+
+# roles:
+#   - name: Region
+#     description: Restricts a user to their own region.
+#     filters:
+#       - table: <Dimension>
+#         expression: "[Region] = USERPRINCIPALNAME()"

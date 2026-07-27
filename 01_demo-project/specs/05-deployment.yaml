@@ -1,0 +1,258 @@
+# =============================================================================
+# 05-deployment.yaml -- Deployment pipeline and code promotion
+# =============================================================================
+# How an artefact travels from a developer's branch to production.
+#
+# Two mechanisms, as established in 01-environments.yaml:
+#
+#   Git integration      dev, qa, uat -- branch-backed, edits sync both ways.
+#   Deployment pipeline  uat -> prod  -- deliberate, gated item promotion.
+#
+# Production is not git-backed, so there is no path by which a push reaches it
+# without passing an approval gate.
+#
+# Nothing here promotes DATA. Deployment moves definitions -- notebooks,
+# semantic models, warehouse DDL, pipelines. Each environment loads its own
+# data from its own source, which is why `parameters` exists.
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: Deployment
+
+metadata:
+  name: demo-commerce-analytics
+  platform_ref: 00-platform.yaml
+  environments_ref: 01-environments.yaml
+
+# -----------------------------------------------------------------------------
+# Fabric deployment pipeline
+# -----------------------------------------------------------------------------
+deployment_pipeline:
+  name: dp-analytics
+  description: Promotes Fabric items across the four environment workspaces
+
+  stages:
+    - { name: Development, workspace: AgenticAIDemo_dev, order: 1 }
+    - { name: QA,          workspace: AgenticAIDemo_qa,  order: 2 }
+    - { name: UAT,         workspace: AgenticAIDemo_uat, order: 3 }
+    - { name: Production,  workspace: AgenticAIDemo,     order: 4 }
+
+  # Which item types the pipeline carries, and how each behaves on promotion.
+  #
+  #   overwrite       replace the target definition wholesale
+  #   create_if_absent  create on first promotion, never modify afterwards
+  #   skip            never promoted; managed per environment
+  items:
+    - { type: Lakehouse,     name: lh_bronze, action: create_if_absent,
+        note: "Structure is promoted; the data inside it is not." }
+    - { type: Lakehouse,     name: lh_silver, action: create_if_absent }
+    - { type: Warehouse,     name: wh_gold, action: create_if_absent,
+        note: "Schema promoted via DDL below, not by copying the item." }
+    - { type: Notebook,      name_pattern: "nb_*", action: overwrite }
+    - { type: DataPipeline,  name_pattern: "p_*", action: overwrite }
+    - { type: SemanticModel, name: sm_sales, action: overwrite,
+        note: "Rebinds to the target environment's warehouse on promotion." }
+    - { type: Report,        name_pattern: "rpt_*", action: overwrite }
+    - { type: Environment,   name: env_spark, action: overwrite,
+        note: "Spark runtime and library versions, pinned per environment." }
+
+  # Never promoted. Each environment holds its own.
+  excluded_items:
+    - { type: Lakehouse, reason: "Table contents are environment-specific data" }
+    - { type: Dataflow,  reason: "Not used; ingestion is notebook-driven" }
+
+# -----------------------------------------------------------------------------
+# Parameter overrides
+# -----------------------------------------------------------------------------
+# Applied as an item crosses a stage boundary, so one artefact definition stays
+# portable. Values resolve from 01-environments.yaml `parameters`.
+parameterisation:
+  strategy: deployment_rules
+  rules:
+    - { item_type: Notebook, parameter: default_lakehouse, source: parameters.bronze_lakehouse }
+    - { item_type: Notebook, parameter: default_warehouse, source: parameters.gold_warehouse }
+    - { item_type: Notebook, parameter: spark_pool_size,   source: parameters.spark_pool_size }
+    - { item_type: Notebook, parameter: dq_failure_action, source: parameters.dq_failure_action }
+    - { item_type: SemanticModel, parameter: warehouse_connection, source: parameters.gold_warehouse }
+    - { item_type: DataPipeline,  parameter: landing_root, source: parameters.source_landing_root }
+
+  # A parameter referenced by an item but absent for the target environment is
+  # a deployment failure, not a fallback to the source environment's value --
+  # which is how a dev connection string reaches production.
+  on_missing_parameter: fail
+
+# -----------------------------------------------------------------------------
+# Warehouse DDL
+# -----------------------------------------------------------------------------
+# Warehouse schema is promoted as versioned, idempotent migrations rather than
+# by copying the item, so the gold schema is reviewable in a pull request and
+# every environment converges on the same state.
+warehouse_migrations:
+  path: ./migrations
+  naming: "V{version}__{description}.sql"
+  strategy: forward_only          # roll forward with a new migration; never edit an applied one
+  history_table: dbo.schema_migrations
+  generated_from: mappings/gold.yaml
+  on_drift:
+    # Detected state differs from what the migration history claims.
+    action: fail
+    description: >-
+      Manual change made directly in a workspace. Fail rather than
+      auto-reconcile, so the change is either captured as a migration or
+      reverted deliberately.
+
+# -----------------------------------------------------------------------------
+# GitHub Actions workflows
+# -----------------------------------------------------------------------------
+workflows:
+
+  - name: ci-validate
+    file: .github/workflows/ci-validate.yml
+    triggers: { pull_request: { branches: [dev, qa, main] } }
+    description: Runs on every pull request. Nothing merges without it passing.
+    jobs:
+      - id: spec-validate
+        description: Specs parse and satisfy 00-platform.yaml `conventions`.
+        steps:
+          - "python framework/generators/validate_specs.py --specs ./specs"
+      - id: unit-tests
+        description: Unit tests for the cleansing library, on local Spark.
+        steps:
+          - "pytest framework/lib/tests -v"
+      - id: notebook-lint
+        description: >-
+          Generated notebooks match the specs. Fails if someone edited a
+          generated notebook by hand instead of changing the spec.
+        steps:
+          - "python framework/generators/generate_notebooks.py --specs ./specs --out ./notebooks --check"
+
+  - name: cd-deploy-dev
+    file: .github/workflows/cd-deploy-dev.yml
+    triggers: { push: { branches: [dev] } }
+    description: Dev deploys automatically. Fast feedback matters more here than ceremony.
+    jobs:
+      - id: deploy
+        environment: dev
+        steps:
+          - "python framework/generators/generate_notebooks.py --specs ./specs --out ./notebooks"
+          - "python framework/generators/generate_ddl.py --specs ./specs --out ./migrations"
+          - "python framework/deploy/sync_workspace.py --env dev"
+          - "python framework/deploy/run_migrations.py --env dev"
+
+  - name: cd-deploy-qa
+    file: .github/workflows/cd-deploy-qa.yml
+    triggers: { push: { branches: [qa] } }
+    description: >-
+      Deploys, runs the pipeline end to end, then enforces the quality gate.
+      This is where a release candidate is accepted or rejected.
+    jobs:
+      - id: deploy
+        environment: qa
+        steps:
+          - "python framework/deploy/sync_workspace.py --env qa"
+          - "python framework/deploy/run_migrations.py --env qa"
+      - id: dq-gate
+        needs: [deploy]
+        steps:
+          - "python framework/deploy/run_pipeline.py --env qa --wait"
+          - "python framework/deploy/check_quality_gate.py --env qa --fail-on error,critical"
+
+  - name: cd-promote-prod
+    file: .github/workflows/cd-promote-prod.yml
+    triggers: { workflow_dispatch: { inputs: [release_tag, change_reference] } }
+    description: >-
+      Manual by design. Production promotion is a decision someone makes and
+      signs their name to, not a side effect of a merge.
+    jobs:
+      - id: preflight
+        steps:
+          - "python framework/deploy/check_quality_gate.py --env uat --fail-on error,critical"
+          - "python framework/deploy/verify_uat_signoff.py --release ${{ inputs.release_tag }}"
+      - id: promote
+        needs: [preflight]
+        environment: production        # GitHub environment protection supplies the approval
+        steps:
+          - "python framework/deploy/promote.py --pipeline dp-analytics --from UAT --to Production"
+          - "python framework/deploy/run_migrations.py --env prod"
+      - id: verify
+        needs: [promote]
+        steps:
+          - "python framework/deploy/smoke_test.py --env prod"
+          - "python framework/deploy/notify.py --channel teams_data_platform --event deployment_complete"
+
+# -----------------------------------------------------------------------------
+# Gates
+# -----------------------------------------------------------------------------
+gates:
+  - id: spec-validate
+    blocks: [dev, qa, uat, prod]
+    automated: true
+
+  - id: unit-tests
+    blocks: [dev, qa, uat, prod]
+    automated: true
+
+  - id: notebook-lint
+    blocks: [qa, uat, prod]
+    automated: true
+
+  - id: dq-gate
+    blocks: [uat, prod]
+    automated: true
+    criteria: No check at severity error or critical is failing in the source environment.
+
+  - id: uat-signoff
+    blocks: [prod]
+    automated: false
+    approvers: [business-data-owner]
+    criteria: Business owner confirms UAT figures match expectation.
+
+  - id: manual-approval
+    blocks: [prod]
+    automated: false
+    approvers: [data-platform-leads]
+    criteria: Deployment window respected, change reference supplied.
+
+# -----------------------------------------------------------------------------
+# Rollback
+# -----------------------------------------------------------------------------
+rollback:
+  strategy: redeploy_previous_tag
+  description: >-
+    Roll back by promoting the previous release tag forward, not by reversing
+    the last deployment. Forward-only keeps the migration history linear and
+    means the rollback path is the same path already exercised on the way in.
+
+  # Warehouse schema cannot be un-migrated. A change that might need reverting
+  # ships as an additive migration plus a follow-up that removes the old
+  # object once nothing reads it.
+  schema_rollback:
+    supported: false
+    mitigation: expand_and_contract
+
+  data_rollback:
+    # Delta time travel covers accidental data corruption within retention.
+    mechanism: delta_time_travel
+    retention_days: 30
+
+  rto_minutes: 30
+  rpo_minutes: 60
+
+# -----------------------------------------------------------------------------
+# Secrets
+# -----------------------------------------------------------------------------
+secrets:
+  store: azure_key_vault
+  vault: techtonic-kv
+  # Referenced by name; values never appear in a spec, a notebook or a log.
+  required:
+    - { name: fabric-sp-secret,  used_by: [all workflows] }
+    - { name: teams-webhook,     used_by: [alerting] }
+    - { name: pagerduty-key,     used_by: [alerting] }
+    - { name: landing-sas-token, used_by: [bronze ingestion] }
+
+  github_environments:
+    - { name: dev,        secrets: [fabric-sp-secret], reviewers: [] }
+    - { name: qa,         secrets: [fabric-sp-secret], reviewers: [] }
+    - { name: uat,        secrets: [fabric-sp-secret], reviewers: [data-platform-leads] }
+    - { name: production, secrets: [fabric-sp-secret, pagerduty-key], reviewers: [data-platform-leads] }

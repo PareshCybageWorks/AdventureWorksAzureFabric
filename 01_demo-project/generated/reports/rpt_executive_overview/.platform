@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Executive Overview",
+    "description": "Commerce performance at a glance, with the data-quality position alongside."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "9c1249b9-f978-5e86-95f9-240ff5918ef9"
+  }
+}

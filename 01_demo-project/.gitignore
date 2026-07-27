@@ -1,0 +1,17 @@
+# generated/ is deliberately NOT ignored.
+#
+# It once was, on the assumption that anything regenerable is disposable. Two
+# parts of the framework now depend on those files being committed:
+#
+#   - the `no-drift` CI gate runs every generator with --check and compares the
+#     output against what is in the repository. With nothing to compare
+#     against, the gate cannot fail -- which is worse than not having it.
+#   - the deploy scripts read from generated/, so a CI deploy job needs the
+#     artefacts present.
+#
+# The diffs are also the point: a changed measure or a moved visual shows up as
+# a few readable lines in a pull request rather than as an opaque redeploy.
+
+__pycache__/
+*.pyc
+.env

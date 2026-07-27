@@ -1,0 +1,80 @@
+/// SCD Type 2. A customer appears once per version, so a fact joins to the version that was current when it happened. Counting rows here counts versions, not customers -- use the Customers measure.
+table Customer
+	lineageTag: 57b0d3d4-aeb6-5ed6-8ab3-962c468dde74
+
+	column 'Customer ID'
+		dataType: string
+		sourceColumn: customer_id
+		summarizeBy: none
+		lineageTag: 132d2185-ce65-550c-94d8-91041585f023
+
+	column 'Customer Name'
+		dataType: string
+		sourceColumn: full_name
+		summarizeBy: none
+		lineageTag: ffd1bf1f-1260-5695-b591-6268159c2bc4
+
+	column Region
+		dataType: string
+		sourceColumn: region
+		summarizeBy: none
+		dataCategory: StateOrProvince
+		lineageTag: 7a3990e9-aea7-5cf0-8ab5-2a8d39d10cb1
+
+	column 'Customer Since'
+		dataType: dateTime
+		sourceColumn: customer_since
+		summarizeBy: none
+		lineageTag: d085499e-544a-5a88-a5bb-cbb0f764bf5a
+
+	column 'Tenure Band'
+		dataType: string
+		sourceColumn: tenure_band
+		summarizeBy: none
+		lineageTag: 5a5571d1-7d29-571a-b6cf-8e158102f4e5
+
+	column 'Version Valid From'
+		dataType: dateTime
+		sourceColumn: valid_from
+		summarizeBy: none
+		lineageTag: 738ee045-6b8b-516d-aaf9-3a15750c2cb5
+
+	column 'Version Valid To'
+		dataType: dateTime
+		sourceColumn: valid_to
+		summarizeBy: none
+		lineageTag: e095168a-7733-55fc-b8c9-0294c036a137
+
+	column 'Is Current Version'
+		dataType: boolean
+		sourceColumn: is_current
+		summarizeBy: none
+		lineageTag: ccd2689a-1f9f-5d93-8cf3-853f9c5dfaf1
+
+	column Email
+		dataType: string
+		isHidden
+		sourceColumn: email
+		summarizeBy: none
+		lineageTag: d475bd58-98bd-5a63-a0ca-65cc03c1985e
+
+	column Phone
+		dataType: string
+		isHidden
+		sourceColumn: phone
+		summarizeBy: none
+		lineageTag: 2a14e802-b414-5c2b-83be-8e876c423cf1
+
+	column customer_sk
+		dataType: int64
+		isHidden
+		sourceColumn: customer_sk
+		summarizeBy: none
+		lineageTag: 2d2b0fbd-d072-5d58-954e-0e8e985a547e
+
+	partition Customer = entity
+		mode: directLake
+		source
+			entityName: dim_customer
+			schemaName: dbo
+			expressionSource: DatabaseQuery

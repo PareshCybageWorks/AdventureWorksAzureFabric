@@ -1,0 +1,109 @@
+# ci-validate
+#
+# GENERATED from cicd/01-pipeline.yaml by
+# framework/generators/generate_workflows.py -- do not edit by hand.
+# Change the spec and regenerate; ci-validate fails on drift.
+#
+# Runs on every pull request. Nothing merges without it passing.
+
+name: ci-validate
+
+"on":
+  pull_request:
+    branches:
+      - dev
+      - qa
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    # Specs conform to their contracts and to every semantic rule. This is the
+    # cheapest gate in the system and catches the most. NOT --strict here,
+    # deliberately. Errors block the merge; warnings are shown but do not. A
+    # warning like "17 checks record no calibration note" is a quality nudge,
+    # and blocking every pull request on it teaches people to silence warnings
+    # rather than act on them. The qa and prod deploys DO run --strict, so a
+    # warning has to be cleared before a release candidate advances -- the same
+    # escalating model as the no-drift gate, which blocks qa/uat/prod but not
+    # dev.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r framework/requirements.txt
+
+      - name: validate.py
+        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+
+  unit-tests:
+    # Verdict logic for the monitoring rules. No Spark, no cluster.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r framework/requirements.txt
+
+      - name: test_monitoring.py
+        run: python AzureFabricMCP/framework/tests/test_monitoring.py
+
+  no-drift:
+    # Generated artefacts match the specs. Fails if someone edited a generated
+    # notebook, model or workflow by hand instead of changing the spec it comes
+    # from -- which would otherwise be silently overwritten by the next
+    # generation.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r framework/requirements.txt
+
+      - name: notebooks
+        run: python AzureFabricMCP/framework/generators/generate_notebooks.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+
+      - name: pipelines
+        run: python AzureFabricMCP/framework/generators/generate_pipelines.py --specs 01_demo-project --out 01_demo-project/generated/pipelines --check
+
+      - name: migrations
+        run: python AzureFabricMCP/framework/generators/generate_ddl.py --specs 01_demo-project --out 01_demo-project/generated/migrations --check
+
+      - name: model
+        run: python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 01_demo-project --out 01_demo-project/generated/model --check
+
+      - name: reports
+        run: python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
+
+      - name: sync_contract_rules.py
+        run: python AzureFabricMCP/framework/generators/sync_contract_rules.py --check

@@ -1,0 +1,371 @@
+# =============================================================================
+# 00-platform.yaml -- Platform scaffolding
+# =============================================================================
+# Root spec for this project. Everything else resolves names, placement and
+# topology from here, so no generator and no notebook hard-codes a workspace,
+# lakehouse or table name.
+#
+# Generators and the PySpark library live in the framework:
+#   ../../AzureFabricMCP/framework/
+#
+# Read order:  00-platform -> 01-environments -> 02-sources
+#              -> mappings/{bronze,silver,gold} -> 04-data-quality
+#              -> 05-deployment
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: Platform
+
+metadata:
+  name: demo-commerce-analytics
+  description: Reference implementation of the Fabric medallion framework
+  owner: data-engineering
+  contact: pareshran@cybage.com
+  framework_path: ../../AzureFabricMCP/framework
+
+# -----------------------------------------------------------------------------
+# Tenant / capacity
+# -----------------------------------------------------------------------------
+# Values written as ${VAR} resolve from the environment at run time, so no
+# tenant identifier or secret is committed.
+tenant:
+  tenant_id: ${FABRIC_TENANT_ID}
+  region: centralindia
+  # OneLake data-plane host for this region. Verified reachable.
+  onelake_endpoint: https://onelakecentralindia.pbidedicated.windows.net
+
+  capacity:
+    default_sku: ${FABRIC_CAPACITY_SKU}
+    default_capacity_id: ${FABRIC_CAPACITY_ID}
+
+auth:
+  # Service principal is the only supported non-interactive path.
+  mode: service_principal
+  client_id: ${FABRIC_CLIENT_ID}
+  client_secret_ref: keyvault://techtonic-kv/fabric-sp-secret
+  # Power BI semantic-model tooling (XMLA) additionally needs one interactive
+  # sign-in before it can run headless. See 05-deployment.yaml.
+
+# -----------------------------------------------------------------------------
+# Topology
+# -----------------------------------------------------------------------------
+# `pattern` is the single switch deciding how workspaces are laid out.
+#
+#   medallion -- one workspace per environment. Domains share it; layers are
+#                separated by item and schema. One governance surface, one
+#                deployment pipeline.
+#
+#   mesh      -- one workspace per domain per environment. Each domain team
+#                owns its pipeline end to end and publishes data products
+#                consumed via OneLake shortcuts.
+#
+# `domain` is a first-class field in every spec, so switching to mesh is a
+# topology change rather than a spec rewrite: the generators fan the same
+# domain definitions across more workspaces.
+topology:
+  pattern: medallion
+  rationale: >-
+    Single delivery team, first iteration of the framework. Medallion keeps one
+    governance surface while the layering discipline is established. Revisit
+    when a second domain acquires its own team and release cadence.
+
+  layers:
+    - name: bronze
+      purpose: Raw landing, ingested as-is, immutable, full history retained
+    - name: silver
+      purpose: Cleansed, deduplicated, conformed, business keys resolved
+    - name: gold
+      purpose: Star schema and reporting views serving Power BI
+
+  # Ignored while pattern is `medallion`.
+  mesh_sharing:
+    mechanism: onelake_shortcut
+    publish_layer: gold
+
+# -----------------------------------------------------------------------------
+# Domains
+# -----------------------------------------------------------------------------
+domains:
+  - name: sales
+    description: Commerce transactions -- customers, orders, order lines, products
+    owner: data-engineering
+    sources: [commerce]
+    publishes_data_product: true
+
+# -----------------------------------------------------------------------------
+# Naming conventions
+# -----------------------------------------------------------------------------
+# Every Fabric item name is produced by one of these templates. Generators
+# resolve names through here -- never by string literal.
+#
+# Placeholders:  {domain} {env} {layer} {entity} {source} {purpose}
+naming:
+  workspace:
+    # Production deliberately carries NO environment suffix, so this cannot be
+    # expressed as a single "{prefix}_{env}" template -- the environments are
+    # therefore enumerated rather than derived. Listing them beats a template
+    # plus a special case, because the special case is production.
+    medallion:
+      dev: "AgenticAIDemo_dev"
+      qa: "AgenticAIDemo_qa"
+      uat: "AgenticAIDemo_uat"
+      prod: "AgenticAIDemo"
+    # Under mesh, each domain gets its own workspace set.
+    mesh: "{domain}Demo_{env}"
+
+  # Storage item names are derived from topology, not from the domain -- see
+  # the `storage.items` block below for why.
+  notebook: "nb_{verb}_{entity}"
+  pipeline: "p_{verb}_{layer}"
+  semantic_model: "sm_{domain}"
+  report: "rpt_{domain}_{purpose}"
+  deployment_pipeline: "dp-analytics"
+
+  # Verb per layer, so an item name says what it DOES. Under medallion the
+  # layer is already carried by the storage item and the workspace folder, so
+  # repeating it in the item name is noise.
+  verbs:
+    bronze: load          # nb_load_customer,  p_load_bronze
+    silver: clean         # nb_clean_customer, p_clean_silver
+    gold: build           # nb_build_dim_customer, p_build_gold
+    master: orchestrate   # p_orchestrate_master
+
+  # Table naming carries the layering rule, so a name states which layer a
+  # table belongs to and no two layers can produce confusable names.
+  #
+  #   bronze   bronze_{source}_{entity}   raw, provenance in the name
+  #   silver   stg_{entity}               cleansed STAGING -- not dimensional
+  #   gold     dim_{entity} / fct_{entity}   the dimensional model
+  #
+  # Silver is deliberately NOT named dim_/fct_. It holds conformed staging, and
+  # naming it dimensionally both overstates what it is and puts dim_customers
+  # one character from gold's dim_customer -- two different tables, in two
+  # different items, that a reader cannot tell apart.
+  tables:
+    bronze: "bronze_{source}_{entity}"
+    silver: "stg_{entity}"
+    gold_dimension: "dim_{entity}"
+    gold_fact: "fct_{entity}"
+    gold_view: "vw_{purpose}"
+
+  # Enforced by the spec validator: a silver target must match the silver
+  # pattern and a gold target the gold ones. The convention is only worth
+  # having if it cannot drift.
+  table_prefixes:
+    silver: ["stg_"]
+    gold: ["dim_", "fct_", "vw_"]
+
+  casing: snake_case
+
+  # One pipeline per layer, plus a master that orchestrates them.
+  pipelines:
+    bronze: "p_load_bronze"
+    silver: "p_clean_silver"
+    gold: "p_build_gold"
+    master: "p_orchestrate_master"
+
+# -----------------------------------------------------------------------------
+# Workspace folders
+# -----------------------------------------------------------------------------
+# Fabric workspace folders organising ITEMS in the workspace. Distinct from the
+# OneLake paths under `storage` below, which organise FILES inside a lakehouse.
+# Both exist; conflating them is the usual source of confusion.
+#
+# Numeric prefixes force the medallion order in a UI that sorts alphabetically,
+# so the workspace reads top-to-bottom in the direction data flows.
+#
+# Item creation cannot set a folder -- neither the MCP nor the REST create-item
+# call takes one, so every item is born at the workspace root. Placement is a
+# separate step, applied by framework/deploy/organise_items.py against the
+# Fabric folders API:
+#
+#     GET  /v1/workspaces/{ws}/folders
+#     POST /v1/workspaces/{ws}/items/{id}/move   {"targetFolderId": "..."}
+#
+# So this block is enforceable, not merely aspirational: run the organiser and
+# the workspace matches it. A mismatch is drift to correct.
+workspace_folders:
+  - name: "0_config"
+    layer: null
+    description: >-
+      Workspace configuration the layers bind to -- Spark runtime and library
+      versions, pinned per environment.
+    contains:
+      - { item_type: Environment, name: "env_spark" }
+
+  - name: "1_bronze"
+    layer: bronze
+    description: Landing. One notebook per source entity, one pipeline to run them.
+    subfolders:
+      - name: notebook
+        contains:
+          - { item_type: Notebook, name_pattern: "nb_load_*" }
+      - name: pipeline
+        contains:
+          - { item_type: DataPipeline, name: "p_load_bronze" }
+
+  - name: "2_silver"
+    layer: silver
+    description: Cleansing. Notebooks run in the dependency order the mapping declares.
+    subfolders:
+      - name: notebook
+        contains:
+          - { item_type: Notebook, name_pattern: "nb_clean_*" }
+      - name: pipeline
+        contains:
+          - { item_type: DataPipeline, name: "p_clean_silver" }
+
+  - name: "3_gold"
+    layer: gold
+    description: Star schema. Dimensions before facts, enforced by the pipeline.
+    subfolders:
+      - name: notebook
+        contains:
+          - { item_type: Notebook, name_pattern: "nb_build_*" }
+      - name: pipeline
+        contains:
+          - { item_type: DataPipeline, name: "p_build_gold" }
+
+  - name: "4_master"
+    layer: null
+    description: >-
+      End-to-end orchestration. Runs the three layer pipelines in order and
+      stops on the first failure, so a broken bronze load never silently
+      produces a stale gold table.
+    subfolders:
+      - name: pipeline
+        contains:
+          - { item_type: DataPipeline, name: "p_orchestrate_master" }
+
+  - name: "5_datastore"
+    layer: null
+    description: >-
+      The lakehouses and warehouse the flow reads and writes. Separated from
+      0_config because a data store is not a setting.
+    contains:
+      - { item_type: Lakehouse, name: "lh_bronze" }
+      - { item_type: Lakehouse, name: "lh_silver" }
+      - { item_type: Warehouse, name: "wh_gold" }
+
+# -----------------------------------------------------------------------------
+# Storage placement
+# -----------------------------------------------------------------------------
+# Bronze and silver live in the Lakehouse: Spark-written Delta, schema-on-read
+# during landing.
+#
+# Gold lives in the Warehouse because the requirement is real T-SQL schemas --
+# `dbo` for physical star-schema tables, `bi` for reporting views. The
+# Warehouse gives multi-schema DDL, view support and a clean Power BI target.
+storage:
+
+  # ---------------------------------------------------------------------
+  # Item layout -- derived from topology.pattern, not chosen per project
+  # ---------------------------------------------------------------------
+  # medallion -> one storage item PER LAYER, shared across every domain.
+  #                lh_bronze   lh_silver   wh_gold
+  #              The layer is the unit of ownership: bronze retention, silver
+  #              cleansing and gold serving have genuinely different access
+  #              patterns, backup needs and permission sets, and separate items
+  #              let each be governed on its own terms. A single lakehouse
+  #              holding all three forces one policy onto all of them.
+  #
+  # mesh      -> one storage item PER DOMAIN, each holding all three layers.
+  #                wh_sales    wh_scm    wh_finance
+  #              The domain is the unit of ownership: each team owns its
+  #              pipeline end to end and publishes a data product. Splitting by
+  #              layer here would cut across team boundaries and put three
+  #              teams inside every item.
+  #
+  # This is the single place the two patterns differ structurally, which is why
+  # switching topology is a one-line change rather than a re-plan. The rule is
+  # documented for reuse in
+  # framework/skills/fabric/lakehouse-warehouse-topology.md.
+  items:
+    medallion:
+      bronze: { item: lakehouse, name: "lh_bronze" }
+      silver: { item: lakehouse, name: "lh_silver" }
+      # Warehouse rather than lakehouse because gold needs real T-SQL schemas
+      # (dbo/bi) and view support. Use lh_gold instead only if gold is consumed
+      # exclusively by Spark and no SQL surface is required.
+      gold:   { item: warehouse, name: "wh_gold" }
+    mesh:
+      per_domain: { item: warehouse, name: "wh_{domain}" }
+      # Domains publish to each other via OneLake shortcuts, per
+      # topology.mesh_sharing.
+
+  # ---------------------------------------------------------------------
+  # Per-layer detail
+  # ---------------------------------------------------------------------
+  bronze:
+    item: lakehouse
+    # Raw files land here first, partitioned by ingest date for replayability.
+    landing_path: "Files/bronze/{source}/{entity}/ingest_date={ingest_date}"
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 730          # two years of immutable raw history
+    immutable: true
+
+  silver:
+    item: lakehouse
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 365
+
+  gold:
+    item: warehouse
+    schemas:
+      physical: dbo              # star-schema tables written by gold notebooks
+      reporting: bi              # views consumed by Power BI; never by pipelines
+    format: delta
+
+    # How the gold PySpark notebook writes into the Warehouse.
+    #
+    #   warehouse_connector -- Spark writes directly to Warehouse dbo tables
+    #                          via the Fabric DW Spark connector. Matches the
+    #                          dbo/bi requirement exactly.
+    #
+    #   lakehouse_staging   -- Spark writes Delta to the Lakehouse and the
+    #                          Warehouse exposes dbo over it. Fallback if the
+    #                          connector is unreliable on this capacity.
+    #
+    # This is the one placement decision that depends on runtime behaviour
+    # rather than configuration. Validate it on the target capacity before
+    # committing the pipeline design.
+    write_mode: warehouse_connector
+    staging_path: "Files/staging/gold/{table}"
+
+# -----------------------------------------------------------------------------
+# Audit columns
+# -----------------------------------------------------------------------------
+# Appended by the framework to every table at the named layer. Mappings do not
+# declare these -- the generator injects them, so the contract is identical
+# across every entity.
+audit_columns:
+  bronze:
+    - { name: _ingested_at,  type: timestamp, source: current_timestamp() }
+    - { name: _source,       type: string,    source: spec.source_system }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _source_file,  type: string,    source: runtime.input_file_name }
+  silver:
+    - { name: _processed_at, type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _record_hash,  type: string,    source: computed.row_hash }
+  gold:
+    - { name: _built_at,     type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+
+# -----------------------------------------------------------------------------
+# Rules the spec validator enforces before any generation runs
+# -----------------------------------------------------------------------------
+conventions:
+  # Every silver table declares a business key -- no anonymous deduplication.
+  require_business_key: true
+  # Every gold fact declares its grain in words.
+  require_declared_grain: true
+  # Every source column is either mapped or explicitly excluded, so a new
+  # upstream column is a spec change rather than a silent drop.
+  require_exhaustive_column_mapping: true
+  # Fail generation if a mapping references a source 02-sources.yaml omits.
+  require_source_registration: true
+  # Every column carrying PII declares a classification and a masking policy.
+  require_pii_classification: true

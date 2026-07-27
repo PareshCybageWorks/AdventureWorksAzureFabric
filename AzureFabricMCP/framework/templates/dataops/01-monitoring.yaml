@@ -1,0 +1,134 @@
+version: 1
+
+# =============================================================================
+# D1 DataOps Monitoring -- <project>
+# =============================================================================
+# Copy to <project>/dataops/01-monitoring.yaml and fill in.
+# Contract: framework/contracts/dataops/01-monitoring.schema.json
+# Rules:    framework/ttfabric/monitoring.py
+#
+# The pipeline already writes a DQ log as it runs. THIS is evaluated afterwards
+# against what landed, which is what catches a slow upstream drift -- no
+# in-flight check sees that, because each individual run looks fine.
+#
+# UNITS, the one thing to get right:
+#   warn_above / fail_above          FRACTION   0.022 means 2.2%
+#   max_increase_pct / _decrease_pct PERCENT    50 means 50%
+#   max_age_hours                    hours
+# A share threshold above 1.0 can never be exceeded, so validation rejects it.
+# =============================================================================
+
+metadata:
+  name: <project>
+  calibrated_from: <profiling run, defect manifest, or "production observation">
+
+results:
+  table: dbo.dq_run_log
+  retain_days: 400
+
+severity_levels:
+  info:
+    blocks_promotion: false
+    alerts: false
+    description: Recorded for trend analysis only
+  warning:
+    blocks_promotion: false
+    alerts: true
+    description: Upstream drifting; someone should look this week
+  error:
+    blocks_promotion: true
+    alerts: true
+    description: Data is wrong; release candidate does not advance
+  critical:
+    blocks_promotion: true
+    alerts: true
+    description: Data is unusable; halt the pipeline and page someone
+
+# Blocking dev stops work; blocking prod stops the business. These should
+# rarely be identical.
+enforcement:
+  dev:
+    mode: warn
+    block_on: []
+  qa:
+    mode: block
+    block_on: [error, critical]
+  uat:
+    mode: block
+    block_on: [error, critical]
+  prod:
+    mode: alert
+    block_on: []
+
+expectations:
+  - table: <bronze_table>
+    layer: bronze
+    # `source` and `expected_columns` are resolved from the source registry and
+    # layer mappings. Declare them only to override.
+    checks:
+      - id: <BR-XXX-001>
+        rule: schema_match
+        severity: critical
+        registry_ref: <system.entity>
+
+      - id: <BR-XXX-002>
+        rule: row_count_delta
+        severity: warning
+        max_increase_pct: 50      # doubling is usually a duplicate load
+        max_decrease_pct: 20      # halving is usually a partial one
+
+      - id: <BR-XXX-003>
+        rule: freshness
+        severity: error
+        column: _ingested_at
+        max_age_hours: 26         # daily load, plus tolerance
+
+  - table: <silver_table>
+    layer: silver
+    checks:
+      # measured_on: input -- a rule calibrated on raw data is meaningless
+      # against the table cleansing has already fixed.
+      - id: <SL-XXX-001>
+        rule: not_null
+        column: <column>
+        severity: warning
+        warn_above: 0.022
+        fail_above: 0.04
+        measured_on: input
+        note: <"Calibrated from <defect> = 29/2048 = 1.42%">
+
+      # Zero tolerance is a statement, not laziness.
+      - id: <SL-XXX-002>
+        rule: accepted_values
+        column: <column>
+        values: [<A>, <B>]
+        severity: error
+        fail_above: 0.0
+        measured_on: output
+
+      - id: <SL-XXX-003>
+        rule: referential_integrity
+        column: <fk_column>
+        references: <parent_table>.<parent_column>
+        severity: error
+        fail_above: 0.0
+        measured_on: output
+
+slas:
+  # Only declare an SLA for a table that also has expectations -- otherwise the
+  # service level is asserted but never measured.
+  - table: <schema.table>
+    freshness_hours: 2
+    completeness_pct: 99.5
+    availability_pct: 99.9
+
+monitoring:
+  check_interval_minutes: 30
+  breach_tolerance: 2           # consecutive breaches before alerting; also
+                                # delays a real incident by that many intervals
+
+alerting:
+  channels:
+    - name: <channel>
+      kind: <teams|email|webhook>
+      target: ${<ENV_VAR>}      # a reference, never a literal webhook

@@ -1,0 +1,123 @@
+/// Marked as the model date table, which is what makes time intelligence correct rather than merely available.
+table Date
+	lineageTag: 4daf0f38-c5eb-59f6-b5a8-8249fc80f597
+	dataCategory: Time
+
+	column Date
+		dataType: dateTime
+		sourceColumn: full_date
+		summarizeBy: none
+		lineageTag: 0d920038-6b3b-5168-a4ed-edd93e41eed8
+		isKey
+
+	column Year
+		dataType: int64
+		sourceColumn: year
+		summarizeBy: none
+		lineageTag: d0a73de6-fb41-5c33-bbad-473f39d27b8f
+
+	column Quarter
+		dataType: string
+		sourceColumn: quarter
+		summarizeBy: none
+		lineageTag: 78902ba2-753e-5d57-8c68-ca6c918addd9
+
+	column 'Month Number'
+		dataType: int64
+		isHidden
+		sourceColumn: month
+		summarizeBy: none
+		lineageTag: 2985b1d1-30cf-57a5-b82c-4718f3697964
+
+	column Month
+		dataType: string
+		sourceColumn: month_name
+		summarizeBy: none
+		sortByColumn: 'Month Number'
+		lineageTag: 0803d2f5-008d-5649-8f66-6d07534228b9
+
+	column 'Year-Month'
+		dataType: string
+		sourceColumn: year_month
+		summarizeBy: none
+		lineageTag: c2a156c6-bea2-5ee2-8f84-473858c59cb3
+
+	column 'Week of Year'
+		dataType: int64
+		sourceColumn: week_of_year
+		summarizeBy: none
+		lineageTag: e3d29a51-91f0-5944-ae99-7d8e285eb1f3
+
+	column 'Day of Month'
+		dataType: int64
+		sourceColumn: day_of_month
+		summarizeBy: none
+		lineageTag: 2bb9b0a6-5b7a-5776-86a6-e0472e28b1cc
+
+	column Day
+		dataType: string
+		sourceColumn: day_name
+		summarizeBy: none
+		lineageTag: 719768b6-415e-5607-934a-b52301aeecd2
+
+	column 'Is Weekend'
+		dataType: boolean
+		sourceColumn: is_weekend
+		summarizeBy: none
+		lineageTag: b752671c-641c-5458-b6f6-32be31c05ce7
+
+	column 'Fiscal Year'
+		dataType: int64
+		sourceColumn: fiscal_year
+		summarizeBy: none
+		lineageTag: 5aee554f-96fd-507b-9922-da792b621ee7
+
+	column 'Fiscal Quarter'
+		dataType: string
+		sourceColumn: fiscal_quarter
+		summarizeBy: none
+		lineageTag: e59e1dc8-357b-5ddf-97fd-947679a41316
+
+	column date_sk
+		dataType: int64
+		isHidden
+		sourceColumn: date_sk
+		summarizeBy: none
+		lineageTag: 24e49992-5cf9-57d8-92be-bf55e7999ffa
+
+	hierarchy Calendar
+		lineageTag: 30846b36-dc88-50cf-8922-e89fe7ded8ef
+
+		level Year
+			lineageTag: 65195657-584b-576b-b647-cec239692ad8
+			column: Year
+
+		level Quarter
+			lineageTag: 834b4d49-55ad-561c-8620-8284ed7d2550
+			column: Quarter
+
+		level Month
+			lineageTag: 85a873a8-897b-5abd-ad0a-547e2da1e462
+			column: Month
+
+	hierarchy 'Fiscal Calendar'
+		lineageTag: 92e8059a-13d7-5362-ba95-088628fa1248
+
+		level 'Fiscal Year'
+			lineageTag: 9accad55-464d-58f2-9ae7-7406642ed2a3
+			column: 'Fiscal Year'
+
+		level 'Fiscal Quarter'
+			lineageTag: ca47f3d9-0b45-513c-9ac2-3063fad06ba6
+			column: 'Fiscal Quarter'
+
+		level Month
+			lineageTag: a7a564e6-4b9b-5c65-b215-f929052da2ef
+			column: Month
+
+	partition Date = entity
+		mode: directLake
+		source
+			entityName: dim_date
+			schemaName: dbo
+			expressionSource: DatabaseQuery

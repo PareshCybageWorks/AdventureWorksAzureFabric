@@ -1,0 +1,278 @@
+version: 1
+
+# =============================================================================
+# C1 CI/CD -- commerce
+# =============================================================================
+# Workflows, gates and promotion rules.
+#
+# Paths are relative to the REPOSITORY ROOT, which is the folder holding both
+# AzureFabricMCP/ and 01_demo-project/ -- not the framework folder. Getting this
+# wrong produces workflows that fail on their first CI run.
+#
+# Every `python <path>` step is resolved against the repository at validation.
+# That check exists because this spec's original steps referenced
+# sync_workspace.py (which never existed) and framework/lib/tests (which moved)
+# -- a workflow generated from that would have failed only once CI was already
+# running, on someone else's pull request.
+#
+# Migrated from specs/05-deployment.yaml.
+#
+# Validate: python AzureFabricMCP/framework/generators/validate.py --project . --track cicd
+# Generate: python AzureFabricMCP/framework/generators/generate_workflows.py --specs . --out .
+# =============================================================================
+
+metadata:
+  name: demo-commerce-analytics
+
+deployment_pipeline:
+  name: dp-analytics
+  description: Promotes Fabric items across the four environment workspaces.
+  stages:
+    - name: Development
+      environment: dev
+      description: Deploys on every push. Fast feedback matters more than ceremony here.
+    - name: QA
+      environment: qa
+      description: Where a release candidate is accepted or rejected.
+    - name: UAT
+      environment: uat
+      requires_approval: true
+      description: Business verification against real figures.
+    - name: Production
+      environment: prod
+      requires_approval: true
+
+  items:
+    - Lakehouse
+    - Warehouse
+    - Notebook
+    - DataPipeline
+    - Environment
+    - SemanticModel
+    - Report
+
+  # Excluded deliberately. Both hold environment-specific state, and promoting
+  # them would overwrite the target's own history with the source's.
+  excluded_items:
+    - dq_run_log
+    - schema_migrations
+
+parameterisation:
+  strategy: placeholders
+  rules:
+    - description: >-
+        Lakehouse, warehouse, environment and workspace ids are environment
+        specific. Generated artefacts carry @@lakehouse:name@@,
+        @@environment:name@@ and @@workspace@@, resolved by the push scripts
+        against the target workspace.
+    - description: >-
+        The semantic model carries @@sqlendpoint@@ and @@database@@; reports
+        carry @@modelid@@. Resolved at deploy time for the same reason -- one
+        reviewed artefact promotes unchanged and binds correctly on arrival.
+  on_missing_parameter: fail
+
+warehouse_migrations:
+  path: ./generated/migrations
+  naming: V{version}__{description}.sql
+  strategy: forward_only
+  history_table: dbo.schema_migrations
+  generated_from: fabric/05-gold.yaml
+  on_drift:
+    action: fail
+    description: >-
+      A manual change made directly in a workspace. Fail rather than
+      auto-reconcile: the safe resolution depends on which side is right, and
+      only a person knows that.
+
+workflows:
+  # ---------------------------------------------------------------------------
+  - name: ci-validate
+    file: .github/workflows/ci-validate.yml
+    description: Runs on every pull request. Nothing merges without it passing.
+    triggers:
+      pull_request:
+        branches: [dev, qa, main]
+      workflow_dispatch: {}
+    jobs:
+      - id: validate
+        description: >-
+          Specs conform to their contracts and to every semantic rule. This is
+          the cheapest gate in the system and catches the most.
+
+          NOT --strict here, deliberately. Errors block the merge; warnings are
+          shown but do not. A warning like "17 checks record no calibration
+          note" is a quality nudge, and blocking every pull request on it
+          teaches people to silence warnings rather than act on them. The qa and
+          prod deploys DO run --strict, so a warning has to be cleared before a
+          release candidate advances -- the same escalating model as the
+          no-drift gate, which blocks qa/uat/prod but not dev.
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+
+      - id: unit-tests
+        description: Verdict logic for the monitoring rules. No Spark, no cluster.
+        steps:
+          - python AzureFabricMCP/framework/tests/test_monitoring.py
+
+      - id: no-drift
+        description: >-
+          Generated artefacts match the specs. Fails if someone edited a
+          generated notebook, model or workflow by hand instead of changing the
+          spec it comes from -- which would otherwise be silently overwritten by
+          the next generation.
+        steps:
+          - python AzureFabricMCP/framework/generators/generate_notebooks.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+          - python AzureFabricMCP/framework/generators/generate_pipelines.py --specs 01_demo-project --out 01_demo-project/generated/pipelines --check
+          - python AzureFabricMCP/framework/generators/generate_ddl.py --specs 01_demo-project --out 01_demo-project/generated/migrations --check
+          - python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 01_demo-project --out 01_demo-project/generated/model --check
+          - python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
+          - python AzureFabricMCP/framework/generators/sync_contract_rules.py --check
+
+  # ---------------------------------------------------------------------------
+  - name: cd-deploy-dev
+    file: .github/workflows/cd-deploy-dev.yml
+    description: Dev deploys automatically on merge.
+    triggers:
+      push:
+        branches: [dev]
+    jobs:
+      - id: deploy
+        environment: dev
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env dev --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env dev --create-missing
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env dev
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env dev
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env dev
+
+  # ---------------------------------------------------------------------------
+  - name: cd-deploy-qa
+    file: .github/workflows/cd-deploy-qa.yml
+    description: >-
+      Deploys, then enforces the quality gate. This is where a release
+      candidate is accepted or rejected.
+    triggers:
+      push:
+        branches: [qa]
+    jobs:
+      - id: deploy
+        environment: qa
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env qa
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
+
+      - id: verify
+        environment: qa
+        needs: [deploy]
+        description: >-
+          The model has to answer, not merely deploy. A DirectLake model with a
+          relationship on the wrong column publishes cleanly and returns blank.
+        steps:
+          - python AzureFabricMCP/framework/tools/query_warehouse.py --project 01_demo-project --env qa --smoke
+          - python AzureFabricMCP/framework/tools/query_model.py --project 01_demo-project --env qa --smoke
+
+  # ---------------------------------------------------------------------------
+  - name: cd-deploy-prod
+    file: .github/workflows/cd-deploy-prod.yml
+    description: >-
+      Promotes to production on a release tag. Approval is enforced by the
+      GitHub Environment, not by this file.
+    triggers:
+      push:
+        tags: ["v*"]
+      workflow_dispatch: {}
+    jobs:
+      - id: deploy
+        environment: prod
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env prod --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env prod --create-missing
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env prod
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env prod
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env prod
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env prod
+
+  # ---------------------------------------------------------------------------
+  - name: ops-monitor
+    file: .github/workflows/ops-monitor.yml
+    description: >-
+      Scheduled data-quality monitoring. Separate from deployment because data
+      drifts on its own schedule, not on the release cadence.
+    triggers:
+      schedule:
+        - cron: "0 */6 * * *"
+      workflow_dispatch: {}
+    jobs:
+      - id: monitor
+        environment: prod
+        steps:
+          - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+
+gates:
+  - id: validate
+    blocks: [dev, qa, uat, prod]
+    automated: true
+    criteria: >-
+      Every spec conforms to its contract and passes all semantic checks.
+      Errors block everywhere. Warnings block only at qa and above, where the
+      deploy runs --strict.
+
+  - id: unit-tests
+    blocks: [dev, qa, uat, prod]
+    automated: true
+
+  - id: no-drift
+    blocks: [qa, uat, prod]
+    automated: true
+    criteria: >-
+      Generated artefacts match their specs. Not enforced on dev, where a quick
+      hand edit is a legitimate way to try something.
+
+  - id: dq-gate
+    blocks: [uat, prod]
+    automated: true
+    criteria: No check at severity error or critical is failing in the source environment.
+
+  - id: uat-signoff
+    blocks: [prod]
+    automated: false
+    approvers: [business-data-owner]
+    criteria: Business owner confirms UAT figures match expectation.
+
+  - id: manual-approval
+    blocks: [prod]
+    automated: false
+    approvers: [data-platform-leads]
+    criteria: Deployment window respected, change reference supplied.
+
+rollback:
+  strategy: redeploy_previous_tag
+  description: >-
+    Roll back by promoting the previous release tag forward, not by reversing
+    the change. A forward deployment is a path that has been exercised; a
+    reversal is one that has not.
+  schema_rollback:
+    supported: false
+    mitigation: expand_and_contract
+  data_rollback:
+    mechanism: delta_time_travel
+    retention_days: 30
+  rto_minutes: 30
+  rpo_minutes: 60
+
+secrets:
+  store: azure_key_vault
+  vault: techtonic-kv
+  # Names only. A literal value here fails check_secrets.
+  required:
+    - AZURE_CLIENT_ID
+    - AZURE_CLIENT_SECRET
+    - AZURE_TENANT_ID

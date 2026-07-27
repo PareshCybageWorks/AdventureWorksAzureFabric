@@ -1,0 +1,181 @@
+version: 1
+
+# =============================================================================
+# P2 Reports -- commerce
+# =============================================================================
+# Every field below is a reference into sm_commerce. validate.py resolves them
+# against 01-semantic-model.yaml, so renaming a measure fails the build here
+# rather than emptying a visual in front of an audience.
+#
+# Validate:  python framework/generators/validate.py --project . --track powerbi
+# Generate:  python framework/generators/generate_report.py --specs . --out generated/reports
+# Deploy:    python framework/deploy/push_reports.py --project . --env dev
+# =============================================================================
+
+defaults:
+  page_width: 1280
+  page_height: 720
+
+reports:
+  - name: rpt_executive_overview
+    display_name: Executive Overview
+    model: sm_commerce
+    audience: >-
+      Executives. Answers three questions in one screen: are we growing, where
+      does the margin come from, and can the numbers be trusted. Anything that
+      does not serve one of those belongs on a different page.
+    description: Commerce performance at a glance, with the data-quality position alongside.
+
+    pages:
+      # -----------------------------------------------------------------------
+      - name: overview
+        display_name: Performance
+        description: >-
+          KPI strip, then trend, then contribution. Reading order is left to
+          right and top to bottom, so the headline number is the first thing
+          seen and the breakdown follows it.
+
+        visuals:
+          # --- KPI strip -----------------------------------------------------
+          - type: card
+            title: Revenue
+            position: { x: 20, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Revenue]
+
+          - type: card
+            title: Recognised Revenue
+            position: { x: 275, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Recognised Revenue]
+
+          - type: card
+            title: Gross Margin %
+            position: { x: 530, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Gross Margin %]
+
+          - type: card
+            title: Orders
+            position: { x: 785, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Orders]
+
+          - type: card
+            title: Average Order Value
+            position: { x: 1040, y: 20, width: 220, height: 120 }
+            fields:
+              Values: [Sales.Average Order Value]
+
+          # --- trend ---------------------------------------------------------
+          - type: lineChart
+            title: Revenue by month, against last year
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Date.Year-Month]
+              Y: [Sales.Revenue, Sales.Revenue LY]
+
+          # --- contribution --------------------------------------------------
+          - type: clusteredBarChart
+            title: Revenue by category
+            position: { x: 785, y: 160, width: 475, height: 300 }
+            fields:
+              Category: [Product.Category]
+              Y: [Sales.Revenue]
+            sort:
+              field: Sales.Revenue
+              direction: Descending
+
+          - type: clusteredColumnChart
+            title: Revenue by region
+            position: { x: 20, y: 475, width: 370, height: 225 }
+            fields:
+              Category: [Customer.Region]
+              Y: [Sales.Revenue]
+            sort:
+              field: Sales.Revenue
+              direction: Descending
+
+          - type: tableEx
+            title: Top products
+            position: { x: 405, y: 475, width: 620, height: 225 }
+            fields:
+              Values:
+                - Product.Product
+                - Product.Category
+                - Sales.Revenue
+                - Sales.Gross Margin %
+                - Sales.Units Sold
+            sort:
+              field: Sales.Revenue
+              direction: Descending
+
+          - type: slicer
+            title: Year
+            position: { x: 1040, y: 475, width: 220, height: 225 }
+            fields:
+              Values: [Date.Year]
+
+      # -----------------------------------------------------------------------
+      - name: quality
+        display_name: Data Quality
+        description: >-
+          Deliberately part of the executive report rather than a separate
+          operational one. A pipeline that silently corrects data looks exactly
+          like a pipeline that silently corrupts it; showing the correction rate
+          next to the numbers it affected is what makes the difference visible.
+
+        visuals:
+          - type: card
+            title: Order lines
+            position: { x: 20, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Order Lines]
+
+          - type: card
+            title: Lines corrected
+            position: { x: 275, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Corrected Lines]
+
+          - type: card
+            title: Corrected %
+            position: { x: 530, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Corrected Lines %]
+
+          - type: card
+            title: Revenue in flight
+            position: { x: 785, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Revenue In Flight]
+
+          - type: clusteredColumnChart
+            title: Corrected lines by month
+            position: { x: 20, y: 160, width: 620, height: 300 }
+            fields:
+              Category: [Date.Year-Month]
+              Y: [Sales.Corrected Lines]
+
+          - type: clusteredBarChart
+            title: Revenue in flight by region
+            position: { x: 655, y: 160, width: 605, height: 300 }
+            fields:
+              Category: [Customer.Region]
+              Y: [Sales.Revenue In Flight]
+            sort:
+              field: Sales.Revenue In Flight
+              direction: Descending
+
+          - type: tableEx
+            title: Customers by value tier
+            position: { x: 20, y: 475, width: 1240, height: 225 }
+            fields:
+              Values:
+                - Customer.Tenure Band
+                - Sales.Customers
+                - Sales.Revenue
+                - Sales.Average Order Value
+            sort:
+              field: Sales.Revenue
+              direction: Descending

@@ -1,0 +1,264 @@
+# =============================================================================
+# 01-environments.yaml -- Environments, Git branching, promotion path
+# =============================================================================
+# Four workspaces and four branches, but they do NOT map one-to-one. Fabric
+# offers two distinct promotion mechanisms and this spec uses each where it
+# belongs:
+#
+#   Git integration       binds a workspace to a branch. Edits sync both ways.
+#                         Right for environments people actively develop in.
+#
+#   Deployment pipeline   promotes items between workspace stages as a
+#                         deliberate, gated action. Right for environments
+#                         nobody edits directly.
+#
+# So dev/qa/uat are branch-backed, and prod is promoted into by pipeline only.
+# Production is deliberately NOT git-backed: that removes any path by which a
+# push can reach production without passing an approval gate.
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: Environments
+
+metadata:
+  name: demo-commerce-analytics
+  platform_ref: 00-platform.yaml
+
+# -----------------------------------------------------------------------------
+# Git repository
+# -----------------------------------------------------------------------------
+git:
+  provider: github
+  organisation: ${GITHUB_ORG}
+  repository: ${GITHUB_REPO}
+  default_branch: main
+
+  # Long-lived branches. `feature/*` is ephemeral and listed for completeness.
+  branches:
+    - name: "feature/*"
+      lifetime: ephemeral
+      created_from: dev
+      merges_to: dev
+      workspace: null            # validated in dev; no dedicated workspace
+      description: >-
+        One branch per unit of work. Validated by CI (spec validation, notebook
+        lint, unit tests on the cleansing library) but not synced to a
+        workspace of its own -- under medallion topology that would mean a
+        workspace per developer.
+
+    - name: dev
+      lifetime: long
+      merges_to: qa
+      workspace: AgenticAIDemo_dev
+      description: Integration branch. Every feature lands here first.
+
+    - name: qa
+      lifetime: long
+      merges_to: main
+      workspace: AgenticAIDemo_qa
+      description: >-
+        Release candidate. Full test suite and data-quality gates run here
+        against production-shaped volumes.
+
+    - name: main
+      lifetime: long
+      merges_to: null
+      workspace: AgenticAIDemo_uat
+      description: >-
+        Source of truth. UAT syncs from main; production is promoted from UAT
+        by the deployment pipeline rather than synced from git.
+
+  # Enforced on the GitHub side; listed here so the intent lives with the spec.
+  branch_protection:
+    qa:
+      require_pull_request: true
+      required_approvals: 1
+      required_status_checks: [spec-validate, unit-tests, notebook-lint]
+    main:
+      require_pull_request: true
+      required_approvals: 2
+      required_status_checks: [spec-validate, unit-tests, notebook-lint, dq-gate]
+      dismiss_stale_reviews: true
+
+# -----------------------------------------------------------------------------
+# Environments
+# -----------------------------------------------------------------------------
+# `workspace` is the resolved value of naming.workspace.medallion from
+# 00-platform.yaml. It is written out here so the mapping from environment to
+# a real Fabric workspace is greppable.
+environments:
+
+  - name: dev
+    workspace: AgenticAIDemo_dev
+    workspace_id: 13c508c8-8fe8-4539-9cf4-2b4a3b91b32f
+    provisioned_items:
+      provisioned_at: "2026-07-25"
+      storage:
+        lh_bronze: a0fb9f08-34e1-4ddc-93b2-3b6fae5417c8
+        lh_silver: cfc39a31-3507-459f-ba50-d4fe4718dfb7
+        wh_gold:   72d85a63-d8c6-4978-803a-fa5cc3e195d8
+      notebooks:
+        nb_load_customers:        ee6e54b6-97bf-486f-9277-0ec46490e07c
+        nb_load_orders:           ed6a8a6e-d827-4983-83b4-7f2f9c9ef770
+        nb_load_order_items:      60f9a12d-41eb-4fd8-9a1b-72b9921fd9fb
+        nb_load_products:         29c6dbd9-20af-42c2-a9c0-6ad8d4821132
+        nb_clean_dim_customers:   e4d096c3-4c9d-409d-92c0-dc9d83ab339e
+        nb_clean_dim_products:    23f79d6c-603c-49b9-b68d-64a6a427a857
+        nb_clean_fct_order_items: 4ee4de01-0c90-4e0b-81b4-cbcd37cef824
+        nb_clean_fct_orders:      05f9bd3a-29af-49bc-899b-b915c4fe85b3
+        nb_build_dim_date:        fc30813f-a546-4131-bd45-8d6ca165db83
+        nb_build_dim_customer:    71d0c315-65ca-4b29-ad86-4ef0186276d8
+        nb_build_dim_product:     e56e7c9b-5aee-470e-8d6c-1c9ef647470e
+        nb_build_fct_sales:       896ebd19-c657-4430-9e81-991509868ba4
+      pipelines:
+        p_load_bronze:        0407f15e-1cce-43bb-a916-e1e0b7f8019b
+        p_clean_silver:       da56ee22-308d-48e3-b96b-d4b0bed735a3
+        p_build_gold:         5ab2dd8a-14ce-4482-a7d0-7bc720863218
+        p_orchestrate_master: 4a5d1847-2646-4f48-a807-9eb5e6dede1a
+      # Superseded by the per-layer split. Delete in the UI -- both are empty.
+      obsolete:
+        lh_sales: 33bcb4f4-7ba5-4e27-a1d7-fbefffe3e1be
+        wh_sales: 1c44d84f-e3d6-4fef-8c99-b6659012c8b6
+    git_backed: true
+    git_branch: dev
+    capacity_sku: ${FABRIC_CAPACITY_SKU_DEV}
+    data:
+      volume: sample                    # generator --scale 0.2
+      contains_pii: false               # synthetic only; never a prod extract
+      refresh: on_demand
+    quality_gate:
+      enforce: false                    # surface failures, do not block
+      description: Fail fast and loudly, but never block a developer.
+    promote_from: "feature/*"
+    promotion_mechanism: git
+
+  - name: qa
+    workspace: AgenticAIDemo_qa
+    workspace_id: ca418d16-23ac-41ab-b892-eaa1cd04e268
+    git_backed: true
+    git_branch: qa
+    capacity_sku: ${FABRIC_CAPACITY_SKU_QA}
+    data:
+      volume: production_shaped         # generator --scale 1.0
+      contains_pii: false               # masked extract if ever sourced real
+      refresh: nightly
+    quality_gate:
+      enforce: true                     # blocks promotion to main
+      description: >-
+        Full data-quality suite. This is the gate that decides whether a
+        release candidate is allowed to become a release.
+    promote_from: dev
+    promotion_mechanism: git
+
+  - name: uat
+    workspace: AgenticAIDemo_uat
+    workspace_id: 08f3d907-80fa-4e86-adfb-ef7d7e5fc34e
+    git_backed: true
+    git_branch: main
+    capacity_sku: ${FABRIC_CAPACITY_SKU_UAT}
+    data:
+      volume: production_shaped
+      contains_pii: true                # masked per 04-data-quality.yaml
+      refresh: nightly
+    quality_gate:
+      enforce: true
+      description: Business validation. Sign-off here authorises production.
+    promote_from: qa
+    promotion_mechanism: git
+
+  - name: prod
+    # Production carries NO suffix. That makes it the shortest and most
+    # innocuous-looking name of the four, which is exactly why every
+    # destructive operation must resolve the workspace by id, never by name.
+    workspace: AgenticAIDemo
+    workspace_id: 00e8f132-21d1-41ed-bbfc-ad3a223cf714
+    git_backed: false                   # deliberate -- see header
+    git_branch: null
+    capacity_sku: ${FABRIC_CAPACITY_SKU_PROD}
+    data:
+      volume: full
+      contains_pii: true                # masked per 04-data-quality.yaml
+      refresh: hourly
+    quality_gate:
+      enforce: true
+      description: >-
+        Same suite as UAT. A failure here raises an incident rather than
+        blocking a deployment, because the data is already live.
+    promote_from: uat
+    promotion_mechanism: deployment_pipeline
+    approval:
+      required: true
+      approvers: [data-platform-leads]
+      # Deployment outside this window needs an explicit override.
+      window: "Mon-Thu 10:00-16:00 IST"
+
+# -----------------------------------------------------------------------------
+# Promotion path
+# -----------------------------------------------------------------------------
+# Summarised in one place so the route to production is readable at a glance.
+#
+#   feature/* --PR--> dev --PR--> qa --PR--> main
+#                      |           |           |
+#                      v           v           v
+#            AgenticAIDemo_dev  _qa        _uat --pipeline+approval--> AgenticAIDemo
+#
+promotion:
+  path: [dev, qa, uat, prod]
+  rules:
+    - from: dev
+      to: qa
+      mechanism: git
+      gates: [spec-validate, unit-tests, notebook-lint]
+      auto: false
+    - from: qa
+      to: uat
+      mechanism: git
+      gates: [spec-validate, unit-tests, notebook-lint, dq-gate]
+      auto: false
+    - from: uat
+      to: prod
+      mechanism: deployment_pipeline
+      gates: [dq-gate, uat-signoff, manual-approval]
+      auto: false
+
+  # No mechanism may skip a stage, including for hotfixes. A hotfix follows
+  # the same path with the gates run at higher priority, so production never
+  # receives an artefact that has not passed QA.
+  allow_stage_skip: false
+
+# -----------------------------------------------------------------------------
+# Per-environment parameter overrides
+# -----------------------------------------------------------------------------
+# Applied by the deployment pipeline when an item moves between stages. Keeps
+# a single artefact definition portable across environments.
+parameters:
+  bronze_lakehouse:
+    dev: lh_bronze
+    qa: lh_bronze
+    uat: lh_bronze
+    prod: lh_bronze
+  silver_lakehouse:
+    dev: lh_silver
+    qa: lh_silver
+    uat: lh_silver
+    prod: lh_silver
+  gold_warehouse:
+    dev: wh_gold
+    qa: wh_gold
+    uat: wh_gold
+    prod: wh_gold
+  source_landing_root:
+    dev: "Files/bronze"
+    qa: "Files/bronze"
+    uat: "Files/bronze"
+    prod: "Files/bronze"
+  spark_pool_size:
+    dev: small
+    qa: medium
+    uat: medium
+    prod: large
+  dq_failure_action:
+    dev: warn
+    qa: block
+    uat: block
+    prod: alert

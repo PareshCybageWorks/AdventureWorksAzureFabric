@@ -1,0 +1,380 @@
+# =============================================================================
+# mappings/gold.yaml -- Silver to Gold
+# =============================================================================
+# Star schema and reporting views. Gold is what Power BI connects to, and it is
+# the only layer a business user should ever see.
+#
+# Two schemas, per 00-platform.yaml `storage.gold.schemas`:
+#
+#   dbo   Physical tables written by the gold PySpark notebooks. Surrogate
+#         keys, conformed dimensions, additive facts.
+#
+#   bi    Views over dbo, shaped for reporting. No pipeline reads from `bi` --
+#         it exists so a view can be reshaped for a report without migrating a
+#         physical table.
+#
+# Dimensions carry surrogate keys and SCD type 2 history. Silver deliberately
+# does not, so that the point where history begins is explicit and lives in one
+# place.
+#
+# Every fact declares its grain in words. 00-platform.yaml sets
+# `require_declared_grain: true` and generation fails without it, because a
+# fact whose grain nobody wrote down is a fact somebody will double-count.
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: gold
+  domain: sales
+  platform_ref: ../00-platform.yaml
+  sources_ref: ../02-sources.yaml
+
+defaults:
+  target_item: warehouse           # wh_gold
+  physical_schema: dbo
+  reporting_schema: bi
+  write_mode: overwrite
+  format: delta
+
+# =============================================================================
+# DIMENSIONS  ->  dbo
+# =============================================================================
+dimensions:
+
+  # ---------------------------------------------------------------------
+  - name: dim_customer
+    schema: dbo
+    source: silver.stg_customers
+    description: Conformed customer dimension with change history
+    scd: type2
+    surrogate_key: customer_sk
+    business_key: [customer_id]
+    # Which columns opening a new version. A phone correction should not
+    # create a new historical row; a region move must, because it changes
+    # which territory the customer's sales are attributed to.
+    scd2_tracked_columns: [region, email]
+    scd2_columns:
+      valid_from: valid_from
+      valid_to: valid_to
+      is_current: is_current
+      version: version
+
+    columns:
+      - { source: customer_id, target: customer_id, type: string, key: business }
+      - { source: full_name,   target: full_name,   type: string }
+      - { source: email,       target: email,       type: string, pii: email, mask: partial_email }
+      - { source: phone,       target: phone,       type: string, pii: phone, mask: partial_phone }
+      - { source: region,      target: region,      type: string }
+      - { source: created_at,  target: customer_since, type: timestamp }
+
+    # Business rules evaluated when the dimension is built.
+    business_rules:
+      - name: tenure_band
+        target: tenure_band
+        type: string
+        description: How long the customer has been on the books.
+        expression: |
+          CASE
+            WHEN months_between(current_date(), customer_since) < 6  THEN 'New (<6m)'
+            WHEN months_between(current_date(), customer_since) < 24 THEN 'Established (6-24m)'
+            ELSE 'Long-standing (24m+)'
+          END
+
+    # Guarantees an unmatched fact row still joins, rather than being dropped
+    # from a report without trace.
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { customer_id: "UNKNOWN", full_name: "Unknown Customer", region: "Unknown" }
+
+  # ---------------------------------------------------------------------
+  - name: dim_product
+    schema: dbo
+    source: silver.stg_products
+    description: Conformed product dimension with price history
+    scd: type2
+    surrogate_key: product_sk
+    business_key: [product_id]
+    scd2_tracked_columns: [list_price, category]
+    scd2_columns:
+      valid_from: valid_from
+      valid_to: valid_to
+      is_current: is_current
+      version: version
+
+    columns:
+      - { source: product_id,   target: product_id,   type: string, key: business }
+      - { source: product_name, target: product_name, type: string }
+      - { source: category,     target: category,     type: string }
+      - { source: list_price,   target: list_price,   type: decimal, precision: 18, scale: 2 }
+      - { source: stock,        target: stock,        type: integer }
+
+    business_rules:
+      - name: price_band
+        target: price_band
+        type: string
+        expression: |
+          CASE
+            WHEN list_price < 100  THEN 'Budget'
+            WHEN list_price < 500  THEN 'Mid-range'
+            WHEN list_price < 1500 THEN 'Premium'
+            ELSE 'Flagship'
+          END
+
+      - name: stock_status
+        target: stock_status
+        type: string
+        expression: |
+          CASE
+            WHEN stock = 0   THEN 'Out of stock'
+            WHEN stock < 50  THEN 'Low'
+            ELSE 'In stock'
+          END
+
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { product_id: "UNKNOWN", product_name: "Unknown Product", category: "Unknown" }
+
+  # ---------------------------------------------------------------------
+  - name: dim_date
+    schema: dbo
+    source: generated                # no upstream table; built by the framework
+    description: Calendar dimension
+    scd: type0                       # dates do not change
+    surrogate_key: date_sk           # yyyymmdd integer, human-readable in a key
+    business_key: [full_date]
+
+    generation:
+      start_date: "2024-01-01"
+      end_date: "2027-12-31"
+      # Fiscal year starting in April, per Indian convention.
+      fiscal_year_start_month: 4
+
+    columns:
+      - { target: full_date,      type: date }
+      - { target: year,           type: integer }
+      - { target: quarter,        type: string }
+      - { target: month,          type: integer }
+      - { target: month_name,     type: string }
+      - { target: year_month,     type: string }
+      - { target: week_of_year,   type: integer }
+      - { target: day_of_month,   type: integer }
+      - { target: day_name,       type: string }
+      - { target: is_weekend,     type: boolean }
+      - { target: fiscal_year,    type: integer }
+      - { target: fiscal_quarter, type: string }
+
+# =============================================================================
+# FACTS  ->  dbo
+# =============================================================================
+facts:
+
+  - name: fct_sales
+    schema: dbo
+    description: Sales at order-line grain
+    # Declared in words, and enforced by the uniqueness test below.
+    grain: >-
+      One row per product per order. An order with three distinct products
+      produces three rows. This is the finest grain available and every other
+      sales measure aggregates up from it.
+    source: silver.stg_order_items
+    joins:
+      # `join_on` rather than `on` -- a bare `on:` key parses as boolean true
+      # under YAML 1.1, silently producing a key nothing can look up.
+      - { table: silver.stg_orders, join_on: order_id, type: inner,
+          description: "Inner join is load-bearing: an order line whose header was quarantined must not reach gold." }
+
+    degenerate_dimensions:
+      # Kept on the fact rather than promoted to a dimension of their own --
+      # they identify a transaction and have no attributes worth conforming.
+      - { source: order_id,      target: order_id,      type: string }
+      - { source: order_item_id, target: order_item_id, type: string }
+
+    dimension_keys:
+      - { dimension: dim_customer, target: customer_sk, lookup_on: customer_id, scd2_as_of: order_date }
+      - { dimension: dim_product,  target: product_sk,  lookup_on: product_id,  scd2_as_of: order_date }
+      - { dimension: dim_date,     target: order_date_sk, lookup_on: order_date_key }
+
+    measures:
+      - { source: quantity,   target: quantity,     type: integer, aggregation: sum, additive: true }
+      - { source: unit_price, target: unit_price,   type: decimal, precision: 18, scale: 2,
+          aggregation: avg, additive: false,
+          description: "Non-additive. Averaging a price across rows is only valid weighted by quantity." }
+      - { source: subtotal,   target: line_revenue, type: decimal, precision: 18, scale: 2,
+          aggregation: sum, additive: true }
+
+    business_rules:
+      - name: revenue_recognition
+        target: recognised_revenue
+        type: decimal
+        precision: 18
+        scale: 2
+        description: >-
+          Revenue counts only once an order is confirmed. Pending orders may
+          never complete and cancelled ones never did. The rule lives here so
+          every report inherits one definition of revenue.
+        expression: "CASE WHEN is_revenue THEN subtotal ELSE 0 END"
+
+      - name: line_cost
+        target: line_cost
+        type: decimal
+        precision: 18
+        scale: 2
+        description: >-
+          No cost column exists upstream. A flat 62% cost ratio stands in so
+          margin is demonstrable. REPLACE WITH REAL COST DATA before this
+          measure is put in front of anyone making a pricing decision.
+        expression: "round(subtotal * 0.62, 2)"
+        provisional: true
+
+      - name: gross_margin
+        target: gross_margin
+        type: decimal
+        precision: 18
+        scale: 2
+        expression: "recognised_revenue - CASE WHEN is_revenue THEN line_cost ELSE 0 END"
+        depends_on: [revenue_recognition, line_cost]
+        provisional: true
+
+    # Carried through so a report can filter to uncorrected rows only.
+    quality_flags:
+      - { source: subtotal_was_corrected, target: subtotal_was_corrected, type: boolean }
+
+    tests:
+      - id: GOLD-GRAIN-001
+        description: The declared grain holds -- no duplicate lines.
+        assertion: "unique(order_item_id)"
+        on_failure: fail
+      - id: GOLD-FK-001
+        description: Every dimension key resolves, unknown member included.
+        assertion: "no_null(customer_sk, product_sk, order_date_sk)"
+        on_failure: fail
+      - id: GOLD-RECON-001
+        description: Gold revenue ties back to silver.
+        assertion: "abs(sum(line_revenue) - silver.sum(stg_order_items.subtotal)) <= 0.01"
+        on_failure: fail
+
+# =============================================================================
+# REPORTING VIEWS  ->  bi
+# =============================================================================
+# Power BI binds to these, never to dbo. That indirection means a report can be
+# reshaped by altering a view instead of migrating a physical table.
+views:
+
+  - name: vw_sales_summary
+    schema: bi
+    description: Daily sales rollup, the default starting point for trend reporting
+    grain: One row per day per region
+    sql: |
+      SELECT
+          d.full_date,
+          d.year,
+          d.quarter,
+          d.month_name,
+          d.fiscal_year,
+          c.region,
+          COUNT(DISTINCT f.order_id)  AS orders,
+          SUM(f.quantity)             AS units_sold,
+          SUM(f.recognised_revenue)   AS revenue,
+          SUM(f.gross_margin)         AS gross_margin,
+          CASE WHEN COUNT(DISTINCT f.order_id) = 0 THEN 0
+               ELSE SUM(f.recognised_revenue) / COUNT(DISTINCT f.order_id)
+          END                         AS avg_order_value
+      FROM dbo.fct_sales      f
+      JOIN dbo.dim_date       d ON f.order_date_sk = d.date_sk
+      JOIN dbo.dim_customer   c ON f.customer_sk   = c.customer_sk
+      GROUP BY d.full_date, d.year, d.quarter, d.month_name, d.fiscal_year, c.region
+
+  - name: vw_customer_360
+    schema: bi
+    description: Customer-level lifetime metrics and value segmentation
+    grain: One row per customer
+    sql: |
+      WITH customer_totals AS (
+          SELECT
+              c.customer_sk,
+              c.customer_id,
+              c.full_name,
+              c.region,
+              c.tenure_band,
+              COUNT(DISTINCT f.order_id) AS total_orders,
+              SUM(f.recognised_revenue)  AS lifetime_value,
+              MIN(d.full_date)           AS first_order_date,
+              MAX(d.full_date)           AS last_order_date
+          FROM dbo.dim_customer c
+          JOIN dbo.fct_sales    f ON f.customer_sk   = c.customer_sk
+          JOIN dbo.dim_date     d ON f.order_date_sk = d.date_sk
+          WHERE c.is_current = TRUE
+          GROUP BY c.customer_sk, c.customer_id, c.full_name, c.region, c.tenure_band
+      )
+      SELECT
+          *,
+          CASE WHEN total_orders = 0 THEN 0
+               ELSE lifetime_value / total_orders END AS avg_order_value,
+          DATEDIFF(DAY, last_order_date, CURRENT_DATE) AS days_since_last_order,
+          -- Value tiers are quantile-based rather than fixed thresholds, so
+          -- they stay meaningful as absolute revenue grows.
+          CASE
+              WHEN lifetime_value >= PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY lifetime_value) OVER () THEN 'Platinum'
+              WHEN lifetime_value >= PERCENTILE_CONT(0.70) WITHIN GROUP (ORDER BY lifetime_value) OVER () THEN 'Gold'
+              WHEN lifetime_value >= PERCENTILE_CONT(0.40) WITHIN GROUP (ORDER BY lifetime_value) OVER () THEN 'Silver'
+              ELSE 'Bronze'
+          END AS value_tier,
+          CASE
+              WHEN DATEDIFF(DAY, last_order_date, CURRENT_DATE) > 180 THEN 'Churn risk'
+              WHEN DATEDIFF(DAY, last_order_date, CURRENT_DATE) >  90 THEN 'Cooling'
+              ELSE 'Active'
+          END AS engagement_status
+      FROM customer_totals
+
+  - name: vw_product_performance
+    schema: bi
+    description: Product-level sales and margin
+    grain: One row per product
+    sql: |
+      SELECT
+          p.product_sk,
+          p.product_id,
+          p.product_name,
+          p.category,
+          p.price_band,
+          p.stock_status,
+          COUNT(DISTINCT f.order_id) AS orders,
+          SUM(f.quantity)            AS units_sold,
+          SUM(f.recognised_revenue)  AS revenue,
+          SUM(f.gross_margin)        AS gross_margin,
+          CASE WHEN SUM(f.recognised_revenue) = 0 THEN 0
+               ELSE SUM(f.gross_margin) / SUM(f.recognised_revenue) * 100
+          END                        AS margin_pct
+      FROM dbo.dim_product p
+      JOIN dbo.fct_sales   f ON f.product_sk = p.product_sk
+      WHERE p.is_current = TRUE
+      GROUP BY p.product_sk, p.product_id, p.product_name, p.category,
+               p.price_band, p.stock_status
+
+  - name: vw_data_quality
+    schema: bi
+    description: >-
+      Quality posture exposed as a reportable view. Makes the pipeline's own
+      health visible in the same dashboard as the business numbers, rather
+      than hidden in a log only the platform team reads.
+    grain: One row per table per load
+    sql: |
+      SELECT
+          load_id,
+          table_name,
+          layer,
+          rows_in,
+          rows_out,
+          rows_quarantined,
+          rows_corrected,
+          CASE WHEN rows_in = 0 THEN 0
+               ELSE CAST(rows_out AS FLOAT) / rows_in * 100
+          END AS pass_rate_pct,
+          checks_passed,
+          checks_failed,
+          processed_at
+      FROM dbo.dq_run_log

@@ -1,0 +1,35 @@
+# Build config for the ttfabric runtime library.
+#
+# Produces a wheel that is attached to the workspace Spark Environment
+# (env_spark, in the 0_config folder). Notebooks then import it natively --
+# no sys.path manipulation, no per-lakehouse copies, and the version is pinned
+# per environment so dev can trial a change while prod stays fixed.
+#
+#   python -m build --wheel
+#   python framework/deploy/push_library.py --project <p> --env dev
+#
+# pyspark is deliberately NOT a dependency. It is provided by the Fabric Spark
+# runtime, and declaring it would make the environment try to install a second
+# copy over the one Spark is already running on.
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ttfabric"
+version = "0.1.0"
+description = "Runtime library for the TechTonic Fabric medallion framework"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+# Installed locally to run the unit tests and the spec validator; never shipped
+# into the Fabric environment.
+dev = ["pytest>=7", "pyspark>=3.4", "jsonschema>=4", "pyyaml>=6"]
+
+[tool.setuptools]
+packages = ["ttfabric"]
+
+[tool.setuptools.package-dir]
+ttfabric = "ttfabric"

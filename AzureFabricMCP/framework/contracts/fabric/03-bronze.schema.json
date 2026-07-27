@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://techtonic.io/fabric/contracts/fabric/03-bronze.schema.json",
+  "title": "Fabric Bronze Mapping",
+  "description": "Stage 3 of the Fabric track. Landing only.\n\nBronze exists to make ingestion replayable, so the single rule is: do not transform. No deduplication, no filtering, no type coercion beyond what is needed to read the file at all. Every defect declared in 02-sources survives into bronze intact -- if bronze silently fixed anything, a silver bug would be indistinguishable from an upstream change, and a replay would not reproduce the original state.\n\nAUTHORITATIVE -- a non-conforming spec fails the build.",
+
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "defaults", "tables"],
+  "additionalProperties": false,
+
+  "properties": {
+    "apiVersion": { "const": "fabric.techtonic.io/v1" },
+    "kind": { "const": "LayerMapping" },
+
+    "metadata": {
+      "type": "object",
+      "required": ["layer", "domain"],
+      "additionalProperties": false,
+      "properties": {
+        "layer": { "const": "bronze" },
+        "domain": { "type": "string" },
+        "scaffolding_ref": { "type": "string" },
+        "sources_ref": { "type": "string" }
+      }
+    },
+
+    "defaults": {
+      "type": "object",
+      "required": ["source_system", "write_mode", "format"],
+      "additionalProperties": false,
+      "properties": {
+        "source_system": { "type": "string" },
+        "write_mode": {
+          "const": "append",
+          "description": "Bronze is immutable. `overwrite` would destroy the replayable history that is the entire reason this layer exists, so the contract permits only append.\n\nAppend makes an incremental watermark mandatory: without one, every re-run re-appends the whole source, and downstream deduplication HIDES it -- counts stay plausible while bronze quietly stops being a faithful record of what arrived."
+        },
+        "format": { "enum": ["delta", "parquet"] },
+        "partition_by": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Partitioning by ingest date turns 'replay everything since Tuesday' into a partition filter rather than a full scan."
+        },
+        "schema_evolution": {
+          "enum": ["additive_only", "none", "permissive"],
+          "description": "additive_only: a new upstream column is added, never dropped."
+        },
+        "on_schema_drift": {
+          "enum": ["fail", "warn", "ignore"],
+          "description": "A type change should stop the load. Continuing past it writes silently wrong data that looks fine until someone queries it."
+        }
+      }
+    },
+
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["target", "source_entity", "load_pattern", "columns"],
+        "additionalProperties": false,
+        "properties": {
+          "target": {
+            "type": "string",
+            "pattern": "^bronze_[a-z0-9_]+$",
+            "description": "Carries the source system so provenance is readable without opening lineage."
+          },
+          "source_entity": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+\\.[a-z0-9_]+$",
+            "description": "source.entity, and must be registered in 02-sources."
+          },
+          "load_pattern": { "enum": ["incremental", "full", "append_only"] },
+          "watermark": {
+            "type": "object",
+            "required": ["column", "initial_value"],
+            "additionalProperties": false,
+            "properties": {
+              "column": { "type": "string" },
+              "initial_value": {
+                "type": "string",
+                "description": "Used on the first run, when there is no high-water mark yet."
+              }
+            }
+          },
+          "columns": {
+            "const": "passthrough",
+            "description": "Only `passthrough` is permitted. Selecting a subset at bronze would silently drop upstream data that can never be recovered without a re-extract -- exclusions belong in silver, where the loss is reversible."
+          },
+          "excluded_columns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Declared even when empty, to satisfy the exhaustive-mapping convention: a column is either taken or explicitly refused, never overlooked."
+          }
+        },
+        "allOf": [
+          {
+            "if": { "properties": { "load_pattern": { "const": "incremental" } }, "required": ["load_pattern"] },
+            "then": {
+              "required": ["watermark"],
+              "description": "Incremental without a watermark re-appends the whole source on every run."
+            }
+          }
+        ]
+      }
+    },
+
+    "landing_checks": {
+      "type": "array",
+      "description": "The only checks bronze runs. They test whether the file ARRIVED correctly, not whether its contents are any good -- that is silver's job.",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "on_failure"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "enum": [
+              "file_present",
+              "header_matches_registry",
+              "row_count_not_zero",
+              "row_count_within_order_of_magnitude",
+              "encoding_readable"
+            ]
+          },
+          "description": { "type": "string" },
+          "on_failure": { "enum": ["fail", "warn"] }
+        }
+      }
+    }
+  }
+}

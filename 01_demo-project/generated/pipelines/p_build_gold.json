@@ -1,0 +1,93 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "dependsOn": [],
+        "name": "nb_build_dim_customer",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_build_dim_customer@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_build_dim_product",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_build_dim_product@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_build_dim_date",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_build_dim_date@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_build_dim_customer",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_build_dim_product",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_build_dim_date",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_build_fct_sales",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_build_fct_sales@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      }
+    ]
+  }
+}

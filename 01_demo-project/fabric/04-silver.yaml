@@ -1,0 +1,343 @@
+# =============================================================================
+# fabric/04-silver.yaml -- Stage F4 (Bronze to Silver)
+# =============================================================================
+# Cleansing and conforming. Silver is the first layer anyone should trust.
+#
+# Two rules govern everything here:
+#
+#   1. Nothing is dropped silently. Every rule that rejects a row names a
+#      quarantine table. A row that vanishes without a reason recorded is a
+#      bug, not a cleansing step.
+#
+#   2. Every rule maps to a named function in the framework library at
+#      framework/lib/cleansing.py. The generator emits calls, never bespoke
+#      logic, so cleansing behaviour is unit-tested once and reused
+#      everywhere rather than reimplemented per entity.
+#
+# Silver holds cleansed CURRENT state (SCD type 1). History tracking with
+# surrogate keys belongs to the gold dimensions -- see mappings/gold.yaml.
+#
+# `rules` execute top to bottom. Order is significant: casting precedes
+# arithmetic, deduplication precedes referential integrity, so a duplicate is
+# never counted as a broken reference.
+#
+# Contract : ../../AzureFabricMCP/framework/contracts/fabric/04-silver.schema.json
+# Procedure: ../../AzureFabricMCP/framework/prompts/fabric/04-silver.md
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: silver
+  domain: sales
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  write_mode: overwrite            # silver is derived and fully rebuildable
+  format: delta
+  scd: type1
+  # Every silver table gets a matching _quarantine table. Rows land there with
+  # the rule that rejected them and the load that produced them.
+  quarantine:
+    enabled: true
+    table_suffix: _quarantine
+    # Matches silver's own mode. Silver is rebuilt each run, so an
+    # appended quarantine accumulates rejects from previous builds and
+    # breaks count(bronze) == count(silver) + count(quarantine).
+    write_mode: overwrite
+    retain_days: 90
+    columns: [_rejected_by, _rejected_at, _load_id, _raw_record]
+
+# =============================================================================
+# stg_customers
+# =============================================================================
+tables:
+
+  - target: stg_customers
+    source: bronze_commerce_customers
+    description: Cleansed customer master, one row per customer
+    load_pattern: full_refresh
+    # Deduplication key. email is the business key rather than customer_id,
+    # because a retried load re-delivers the same person under the same id and
+    # a genuine re-registration produces a new id for the same email.
+    business_key: [email]
+    surrogate_key: null            # assigned in gold
+
+    columns:
+      - { source: customer_id, target: customer_id, type: string,  nullable: false, key: natural }
+      - { source: email,       target: email,       type: string,  nullable: false, key: business, transforms: [trim, lower] }
+      - { source: first_name,  target: first_name,  type: string,  nullable: false, transforms: [trim] }
+      - { source: last_name,   target: last_name,   type: string,  nullable: false, transforms: [trim] }
+      # Derived, not sourced. Declared so downstream layers do not concatenate
+      # names themselves and drift apart.
+      - { source: null, target: full_name, type: string, nullable: false,
+          expression: "concat_ws(' ', first_name, last_name)" }
+      - { source: phone,      target: phone,      type: string,   nullable: true,  pii: phone, mask: partial_phone }
+      - { source: region,     target: region,     type: string,   nullable: false, transforms: [trim, title_case],
+          allowed_values: [North, South, East, West, Central], on_violation: quarantine }
+      - { source: created_at, target: created_at, type: timestamp, nullable: false }
+      - { source: updated_at, target: updated_at, type: timestamp, nullable: false }
+
+    rules:
+      - fn: cast_types
+        description: Apply declared target types before anything reads them.
+
+      - fn: apply_transforms
+        description: Run the per-column transforms declared above.
+
+      - fn: drop_null_business_key
+        params: { columns: [email] }
+        handles: NULL-001
+        on_reject: quarantine
+
+      - fn: deduplicate
+        params:
+          keys: [email]
+          keep: latest
+          order_by: [updated_at desc, created_at desc]
+        handles: DUP-001
+        on_reject: quarantine
+
+      - fn: enforce_allowed_values
+        params: { column: region }
+        on_reject: quarantine
+
+      - fn: mask_pii
+        # Masking is environment-driven: 01-environments.yaml sets
+        # contains_pii per environment, and this is a no-op where it is false.
+        params: { policy_ref: ../04-data-quality.yaml#masking }
+
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+        description: Row fingerprint, used by gold to detect real changes.
+
+# =============================================================================
+# stg_products
+# =============================================================================
+  - target: stg_products
+    source: bronze_commerce_products
+    description: Cleansed product catalogue, one row per product
+    load_pattern: full_refresh
+    business_key: [product_id]
+
+    columns:
+      - { source: product_id,   target: product_id,   type: string,  nullable: false, key: business }
+      - { source: product_name, target: product_name, type: string,  nullable: false, transforms: [trim] }
+      - { source: category,     target: category,     type: string,  nullable: false, transforms: [trim, title_case],
+          default_when_null: "Uncategorised" }
+      - { source: price,        target: list_price,   type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: stock,        target: stock,        type: integer, nullable: false }
+      - { source: created_at,   target: created_at,   type: timestamp, nullable: false }
+      - { source: updated_at,   target: updated_at,   type: timestamp, nullable: false }
+
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+
+      - fn: default_nulls
+        params: { column: category, value: "Uncategorised" }
+        description: >-
+          An uncategorised product is still a real product. Defaulting keeps it
+          in the catalogue rather than dropping sales along with it.
+
+      - fn: quarantine_invalid_price
+        params: { column: list_price, min_exclusive: 0 }
+        handles: PRICE-001
+        on_reject: quarantine
+        description: >-
+          A non-positive list price is a catalogue error. It does NOT
+          invalidate sales of that product -- order_items carries the price at
+          time of sale, so revenue survives even when the catalogue row does
+          not.
+
+      - fn: deduplicate
+        params: { keys: [product_id], keep: latest, order_by: [updated_at desc] }
+        on_reject: quarantine
+
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+# =============================================================================
+# stg_order_items
+# =============================================================================
+# Cleansed BEFORE stg_orders, because the order header's total is recomputed
+# from these lines. Declaration order is the dependency order.
+  - target: stg_order_items
+    source: bronze_commerce_order_items
+    description: Cleansed order lines, one row per product per order
+    load_pattern: full_refresh
+    business_key: [order_item_id]
+    depends_on: [stg_products]
+
+    columns:
+      - { source: order_item_id, target: order_item_id, type: string,  nullable: false, key: business }
+      - { source: order_id,      target: order_id,      type: string,  nullable: false, key: foreign }
+      - { source: product_id,    target: product_id,    type: string,  nullable: false, key: foreign }
+      - { source: quantity,      target: quantity,      type: integer, nullable: false }
+      - { source: unit_price,    target: unit_price,    type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: subtotal,      target: subtotal,      type: decimal, nullable: false, precision: 18, scale: 2 }
+      # Preserves what upstream claimed, so the correction is auditable rather
+      # than invisible.
+      - { source: subtotal,      target: subtotal_as_reported, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: null, target: subtotal_was_corrected, type: boolean, nullable: false,
+          expression: "abs(subtotal_as_reported - (quantity * unit_price)) > 0.01" }
+      - { source: created_at,    target: created_at,    type: timestamp, nullable: false }
+
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+
+      - fn: deduplicate
+        params: { keys: [order_item_id], keep: latest, order_by: [created_at desc] }
+        on_reject: quarantine
+
+      - fn: validate_positive
+        params: { columns: [quantity, unit_price] }
+        on_reject: quarantine
+
+      - fn: recompute_subtotal
+        params:
+          target: subtotal
+          expression: "quantity * unit_price"
+          tolerance: 0.01
+          keep_original_as: subtotal_as_reported
+        handles: RECON-001
+        on_reject: correct_and_flag
+        description: >-
+          quantity and unit_price are trustworthy; only the stored line total
+          drifted. Recomputing is correct and loses nothing, because the
+          reported value is retained alongside a flag. Rows are corrected, not
+          quarantined -- discarding 2% of revenue to fix an arithmetic error
+          would be the larger error.
+
+      - fn: enforce_referential_integrity
+        params: { column: product_id, references: stg_products.product_id }
+        on_reject: quarantine
+
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+# =============================================================================
+# stg_orders
+# =============================================================================
+  - target: stg_orders
+    source: bronze_commerce_orders
+    description: Cleansed order headers, one row per order
+    load_pattern: full_refresh
+    business_key: [order_id]
+    depends_on: [stg_customers, stg_order_items]
+
+    columns:
+      - { source: order_id,    target: order_id,    type: string,  nullable: false, key: business }
+      - { source: customer_id, target: customer_id, type: string,  nullable: false, key: foreign }
+      - { source: order_date,  target: order_date,  type: timestamp, nullable: false }
+      - { source: null, target: order_date_key, type: date, nullable: false,
+          expression: "to_date(order_date)", description: Join key to dim_date }
+      - { source: total_price, target: order_total, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: total_price, target: order_total_as_reported, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: null, target: order_total_was_corrected, type: boolean, nullable: false,
+          expression: "abs(order_total_as_reported - order_total) > 0.01" }
+      - { source: status,      target: status,      type: string,  nullable: false, transforms: [trim, lower],
+          allowed_values: [pending, confirmed, shipped, delivered, cancelled], on_violation: quarantine }
+      # Whether this order counts towards recognised revenue. Declared once
+      # here so no downstream report re-decides it.
+      - { source: null, target: is_revenue, type: boolean, nullable: false,
+          expression: "status in ('confirmed', 'shipped', 'delivered')" }
+      - { source: items_count, target: items_count_as_reported, type: integer, nullable: false }
+      - { source: null, target: items_count, type: integer, nullable: false,
+          expression: "count(order_items where order_id = this.order_id)" }
+      - { source: created_at,  target: created_at,  type: timestamp, nullable: false }
+      - { source: updated_at,  target: updated_at,  type: timestamp, nullable: false }
+
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+
+      - fn: deduplicate
+        params: { keys: [order_id], keep: latest, order_by: [updated_at desc, created_at desc] }
+        handles: DUP-002
+        on_reject: quarantine
+
+      - fn: drop_null_required
+        params: { columns: [order_date] }
+        on_reject: quarantine
+        description: >-
+          An order with no date cannot be placed on a timeline, so it cannot
+          contribute to any time-based measure. Quarantined for upstream
+          follow-up rather than defaulted to a date it did not happen on.
+
+      - fn: quarantine_negative_total
+        params: { column: order_total, min_exclusive: 0 }
+        handles: SIGN-001
+        on_reject: quarantine
+        description: >-
+          A negative header total is a refund recorded in the wrong place.
+          Treating it as revenue would understate the true figure, and
+          flipping its sign would invent a sale. Quarantined until upstream
+          issues a proper credit note.
+
+      - fn: enforce_allowed_values
+        params: { column: status }
+        on_reject: quarantine
+
+      - fn: enforce_referential_integrity
+        params: { column: customer_id, references: stg_customers.customer_id }
+        handles: REF-001
+        on_reject: quarantine
+        description: >-
+          Orders whose customer was purged upstream. Quarantined rather than
+          attached to an "Unknown Customer" placeholder, which would hide a
+          real upstream deletion problem behind a plausible-looking dimension
+          member.
+
+      - fn: recompute_total_from_lines
+        params:
+          target: order_total
+          from_table: stg_order_items
+          join_on: order_id
+          aggregate: "sum(subtotal)"
+          tolerance: 0.01
+          keep_original_as: order_total_as_reported
+        handles: RECON-002
+        on_reject: correct_and_flag
+        description: >-
+          The lines are the source of truth; the header is a cached rollup.
+          Recomputed from the already-corrected lines, which is why this rule
+          runs after stg_order_items is built.
+
+      - fn: recompute_items_count
+        params:
+          target: items_count
+          from_table: stg_order_items
+          join_on: order_id
+          aggregate: "count(*)"
+          keep_original_as: items_count_as_reported
+        on_reject: correct_and_flag
+
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+# -----------------------------------------------------------------------------
+# Reconciliation
+# -----------------------------------------------------------------------------
+# Run after every silver table is built. These assert that the layer as a whole
+# is internally consistent -- something no single-table rule can establish.
+reconciliation:
+  - id: SILVER-RECON-001
+    description: Every surviving order line belongs to a surviving order.
+    assertion: "stg_order_items.order_id IN stg_orders.order_id"
+    on_failure: fail
+
+  - id: SILVER-RECON-002
+    description: Header totals equal the sum of their lines, post-correction.
+    assertion: "abs(stg_orders.order_total - sum(stg_order_items.subtotal)) <= 0.01"
+    on_failure: fail
+
+  - id: SILVER-RECON-003
+    description: >-
+      Bronze rows are fully accounted for -- every row either reached silver or
+      is sitting in quarantine with a reason. Nothing disappears.
+    assertion: "count(bronze) == count(silver) + count(quarantine)"
+    on_failure: fail

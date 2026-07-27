@@ -1,0 +1,85 @@
+version: 1
+
+# =============================================================================
+# P2 Reports -- <project>
+# =============================================================================
+# Copy to <project>/powerbi/02-reports.yaml and fill in.
+# Contract: framework/contracts/powerbi/02-reports.schema.json
+#
+# Every field is "Table.Field" using the DISPLAY names from 01-semantic-model.
+# validate.py resolves them: a renamed measure fails the build here rather than
+# silently emptying a visual.
+# =============================================================================
+
+defaults:
+  page_width: 1280
+  page_height: 720
+
+reports:
+  - name: rpt_<subject>              # rpt_ prefix, lowercase
+    display_name: <Title>
+    model: sm_<subject>              # must match model.name in P1
+    audience: >-
+      Who reads this and what decision it supports. A report without a stated
+      audience accumulates visuals until it answers nothing in particular.
+    description: <one line>
+
+    pages:
+      - name: <page_key>
+        display_name: <Page Title>
+        description: >-
+          What this page answers, and the reading order it assumes.
+
+        visuals:
+          # --- KPI strip across the top --------------------------------------
+          # Positions are explicit pixels on a 1280x720 page; ~20px gutters.
+          - type: card
+            title: <Metric>
+            position: { x: 20, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [<Fact>.<Measure>]
+
+          # --- trend ---------------------------------------------------------
+          - type: lineChart
+            title: <Metric> over time
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Date.Year-Month]
+              Y: [<Fact>.<Measure>]
+
+          # --- breakdown -----------------------------------------------------
+          # Sort ranked visuals by the measure that matters; the default is
+          # alphabetical, which buries the finding.
+          - type: clusteredBarChart
+            title: <Metric> by <Dimension>
+            position: { x: 785, y: 160, width: 475, height: 300 }
+            fields:
+              Category: [<Dimension>.<Attribute>]
+              Y: [<Fact>.<Measure>]
+            sort:
+              field: <Fact>.<Measure>
+              direction: Descending
+
+          # --- detail --------------------------------------------------------
+          - type: tableEx
+            title: <Detail>
+            position: { x: 20, y: 475, width: 1000, height: 225 }
+            fields:
+              Values:
+                - <Dimension>.<Attribute>
+                - <Fact>.<Measure>
+
+          # One slicer beats five: each is a decision the reader must make
+          # before seeing anything.
+          - type: slicer
+            title: <Filter>
+            position: { x: 1040, y: 475, width: 220, height: 225 }
+            fields:
+              Values: [Date.Year]
+
+# Visual roles by type:
+#   card, multiRowCard, tableEx, matrix, slicer   Values
+#   barChart, columnChart, clusteredBarChart,
+#   clusteredColumnChart, lineChart, areaChart    Category, Y, [Series]
+#   pieChart, donutChart, treemap                 Category, Y
+#   scatterChart                                  X, Y, [Size], [Details]

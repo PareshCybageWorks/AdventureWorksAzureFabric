@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "sm_commerce",
+    "description": "Commerce star schema over wh_gold. One fact (Sales) and three conformed dimensions. Every business definition -- revenue, margin, recognised revenue -- lives here as a measure so reports cannot disagree about them."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "660d843e-0f19-58a1-8d05-d0b2ca5430b2"
+  }
+}

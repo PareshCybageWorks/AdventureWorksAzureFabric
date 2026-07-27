@@ -1,0 +1,167 @@
+# =============================================================================
+# fabric/01-scaffolding.yaml -- Stage F1  [TEMPLATE]
+# =============================================================================
+# Copy into <project>/fabric/ and replace every <ANGLE_BRACKET> value.
+# Validate with:
+#   python framework/generators/validate.py --project <project> --track fabric
+#
+# Procedure (what to ask, what to derive): framework/prompts/fabric/01-scaffolding.md
+# Contract  (authoritative shape)        : framework/contracts/fabric/01-scaffolding.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: FabricScaffolding
+
+metadata:
+  name: <project-name>                 # lowercase kebab-case
+  description: <one line>
+  owner: <team, not a person>
+  contact: <email>
+  framework_path: ../../AzureFabricMCP/framework
+
+tenant:
+  tenant_id: ${FABRIC_TENANT_ID}
+  region: <e.g. centralindia>
+  onelake_endpoint: https://onelake<region>.pbidedicated.windows.net
+  capacity:
+    default_sku: <F64 | FTL64 | ...>   # F2/F4 cannot run Spark usefully
+    default_capacity_id: <guid>
+    is_trial: false                    # true if it expires -- say so here
+
+auth:
+  mode: service_principal
+  client_id: ${FABRIC_CLIENT_ID}
+  client_secret_ref: keyvault://<vault>/<secret>   # a REFERENCE, never a value
+
+# medallion unless multiple teams own pipelines end to end with independent
+# release cadences. `rationale` is required and length-checked.
+topology:
+  pattern: medallion
+  rationale: >-
+    <Why this pattern. Name the teams, the cadences, and what would have to
+    change for the other pattern to win.>
+  layers:
+    # Quote purposes -- an unquoted comma in flow style ends the value.
+    - { name: bronze, purpose: "Raw landing, ingested as-is, immutable" }
+    - { name: silver, purpose: "Cleansed, deduplicated, conformed staging" }
+    - { name: gold,   purpose: "Star schema and reporting views" }
+
+domains:
+  - name: <domain>                     # lowercase snake_case
+    description: <what this domain covers>
+    owner: <team>
+    sources: [<source-id>]
+    publishes_data_product: false
+
+environments:
+  - { name: dev,  workspace: <Name_dev>,  workspace_id: null, capacity_sku: <SKU> }
+  - { name: qa,   workspace: <Name_qa>,   workspace_id: null, capacity_sku: <SKU> }
+  - { name: uat,  workspace: <Name_uat>,  workspace_id: null, capacity_sku: <SKU> }
+  - { name: prod, workspace: <Name>,      workspace_id: null, capacity_sku: <SKU>,
+      is_production: true }            # exactly one; resolved by id, never name
+
+naming:
+  workspace:
+    medallion: { dev: <Name_dev>, qa: <Name_qa>, uat: <Name_uat>, prod: <Name> }
+    mesh: "{domain}<Suffix>_{env}"
+  notebook: "nb_{verb}_{entity}"
+  pipeline: "p_{verb}_{layer}"
+  semantic_model: "sm_{domain}"
+  report: "rpt_{domain}_{purpose}"
+  deployment_pipeline: "dp-<name>"
+  verbs: { bronze: load, silver: clean, gold: build, master: orchestrate }
+  pipelines:
+    bronze: p_load_bronze
+    silver: p_clean_silver
+    gold: p_build_gold
+    master: p_orchestrate_master
+  tables:
+    bronze: "bronze_{source}_{entity}"
+    silver: "stg_{entity}"             # staging, NOT dim_/fct_
+    gold_dimension: "dim_{entity}"
+    gold_fact: "fct_{entity}"
+    gold_view: "vw_{purpose}"
+  table_prefixes:                      # enforced by the validator
+    silver: [stg_]
+    gold: [dim_, fct_, vw_]
+  casing: snake_case
+
+storage:
+  items:
+    medallion:
+      bronze: { item: lakehouse, name: lh_bronze }
+      silver: { item: lakehouse, name: lh_silver }
+      gold:   { item: warehouse, name: wh_gold }   # warehouse if gold needs T-SQL/views
+    mesh:
+      per_domain: { item: warehouse, name: "wh_{domain}" }
+  bronze:
+    item: lakehouse
+    landing_path: "Files/bronze/{source}/{entity}/ingest_date={ingest_date}"
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 730
+    immutable: true
+  silver:
+    item: lakehouse
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 365
+  gold:
+    item: warehouse
+    format: delta
+    schemas: { physical: dbo, reporting: bi }
+    write_mode: warehouse_connector    # OVERWRITE ONLY; append is unsupported
+    staging_path: "Files/staging/gold/{table}"
+
+workspace_folders:
+  - name: "0_config"
+    layer: null
+    contains:
+      - { item_type: Environment, name: env_spark }
+
+  - name: "1_bronze"
+    layer: bronze
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_load_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_load_bronze }] }
+  - name: "2_silver"
+    layer: silver
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_clean_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_clean_silver }] }
+  - name: "3_gold"
+    layer: gold
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_build_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_build_gold }] }
+  - name: "4_master"
+    layer: null
+    subfolders:
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_orchestrate_master }] }
+  - name: "5_datastore"
+    layer: null
+    contains:
+      - { item_type: Lakehouse, name: lh_bronze }
+      - { item_type: Lakehouse, name: lh_silver }
+      - { item_type: Warehouse, name: wh_gold }
+
+audit_columns:
+  bronze:
+    - { name: _ingested_at,  type: timestamp, source: current_timestamp() }
+    - { name: _source,       type: string,    source: spec.source_system }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _source_file,  type: string,    source: runtime.input_file_name }
+  silver:
+    - { name: _processed_at, type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _record_hash,  type: string,    source: computed.row_hash }
+  gold:
+    - { name: _built_at,     type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+
+conventions:
+  require_business_key: true
+  require_declared_grain: true
+  require_exhaustive_column_mapping: true
+  require_source_registration: true
+  require_pii_classification: true

@@ -1,0 +1,94 @@
+# cd-deploy-qa
+#
+# GENERATED from cicd/01-pipeline.yaml by
+# framework/generators/generate_workflows.py -- do not edit by hand.
+# Change the spec and regenerate; ci-validate fails on drift.
+#
+# Deploys, then enforces the quality gate. This is where a release candidate
+# is accepted or rejected.
+
+name: cd-deploy-qa
+
+"on":
+  push:
+    branches:
+      - qa
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: qa
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r framework/requirements.txt
+
+      - name: validate.py
+        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project --strict
+
+      - name: push_library.py
+        run: python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
+
+      - name: push_items.py
+        run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
+
+      - name: organise_items.py
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
+
+      - name: run_migrations.py
+        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
+
+      - name: push_semantic_model.py
+        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env qa
+
+      - name: push_reports.py
+        run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
+
+  verify:
+    # The model has to answer, not merely deploy. A DirectLake model with a
+    # relationship on the wrong column publishes cleanly and returns blank.
+    runs-on: ubuntu-latest
+    environment: qa
+    needs: [deploy]
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r framework/requirements.txt
+
+      - name: query_warehouse.py
+        run: python AzureFabricMCP/framework/tools/query_warehouse.py --project 01_demo-project --env qa --smoke
+
+      - name: query_model.py
+        run: python AzureFabricMCP/framework/tools/query_model.py --project 01_demo-project --env qa --smoke

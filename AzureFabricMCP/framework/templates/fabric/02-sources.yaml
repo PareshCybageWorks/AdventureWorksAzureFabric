@@ -1,0 +1,73 @@
+# =============================================================================
+# fabric/02-sources.yaml -- Stage F2  [TEMPLATE]
+# =============================================================================
+# Copy into <project>/fabric/ and replace every <ANGLE_BRACKET> value.
+#
+# Procedure: framework/prompts/fabric/02-sources.md
+# Contract : framework/contracts/fabric/02-sources.schema.json
+#
+# Quote any value containing a comma. In flow style an unquoted comma ends the
+# value, and the remainder silently becomes a null-valued key.
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: SourceRegistry
+
+metadata:
+  name: <project-name>
+  description: <what this registry covers>
+  scaffolding_ref: 01-scaffolding.yaml
+
+sources:
+  - name: <source_id>                  # lowercase snake_case; appears in bronze table names
+    description: <what this system is>
+    domain: <domain>                   # must match a domain in 01-scaffolding.yaml
+    system_type: relational_export     # rest_api | database | event_stream | file_drop | ...
+    owner: <upstream team>
+
+    connection:
+      kind: file                       # jdbc | rest | eventhub | shortcut
+      format: csv
+      location_dev: "./data/<folder>"
+      location: "abfss://${LANDING_CONTAINER}@${LANDING_ACCOUNT}.dfs.core.windows.net/<path>"
+      options:
+        header: true
+        delimiter: ","
+        encoding: utf-8
+        quote: '"'
+        infer_schema: false            # never infer -- it hides schema drift
+
+    sla:
+      delivery_by: "<HH:MM TZ>"
+      freshness_hours: 24
+
+    entities:
+      - name: <entity>
+        description: <what one row represents>
+        file_pattern: "<entity>.csv"
+        primary_key: [<id_column>]
+        watermark_column: updated_at   # REQUIRED when load_pattern is incremental
+        load_pattern: incremental      # full | append_only | cdc
+        expected_row_order: 1e4        # order of magnitude, for anomaly checks
+        foreign_keys:
+          - { columns: [<fk>], references: "<source>.<entity>", references_columns: [<pk>] }
+        # Column ORDER must match the real file -- the bronze notebook applies
+        # this schema positionally, and a mismatch corrupts silently.
+        columns:
+          - { name: <id_column>, type: string,    nullable: false, description: "<natural key, format>" }
+          - { name: <a_name>,    type: string,    nullable: false, pii: name }
+          - { name: <an_email>,  type: string,    nullable: true,  pii: email }
+          - { name: <an_amount>, type: decimal,   nullable: false, precision: 18, scale: 2 }
+          - { name: <a_status>,  type: string,    nullable: false, domain_values: [<a>, <b>] }
+          - { name: created_at,  type: timestamp, nullable: false }
+          - { name: updated_at,  type: timestamp, nullable: false }
+
+# Defects upstream is KNOWN to contain. Every id must be handled by a silver
+# rule, and the validator proves it. Rates must be MEASURED -- thresholds are
+# calibrated from them.
+known_issues:
+  - id: DUP-001                        # <PREFIX>-<nnn>
+    entity: <entity>
+    description: <what goes wrong and why, at least a sentence>
+    observed_rate: 0.0                 # measured share, not a guess
+    handled_by: silver.stg_<entity>.<rule>

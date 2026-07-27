@@ -1,0 +1,289 @@
+# =============================================================================
+# fabric/01-scaffolding.yaml -- Stage F1
+# =============================================================================
+# The platform this project runs ON: tenant, capacity, topology, domains,
+# environment workspaces, storage items, naming.
+#
+# Nothing about DATA belongs here (sources = F2, mappings = F3-F5). Branch
+# mapping and promotion gates belong to the CI/CD track -- a workspace is
+# scaffolding, a branch is delivery.
+#
+# Contract : ../../AzureFabricMCP/framework/contracts/fabric/01-scaffolding.schema.json
+# Procedure: ../../AzureFabricMCP/framework/prompts/fabric/01-scaffolding.md
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: FabricScaffolding
+
+metadata:
+  name: demo-commerce-analytics
+  description: Reference implementation of the Fabric medallion framework
+  owner: data-engineering
+  contact: pareshran@cybage.com
+  framework_path: ../../AzureFabricMCP/framework
+
+tenant:
+  tenant_id: ${FABRIC_TENANT_ID}
+  region: centralindia
+  onelake_endpoint: https://onelakecentralindia.pbidedicated.windows.net
+  capacity:
+    default_sku: FTL64
+    default_capacity_id: 325b3b5d-baef-44cb-97f4-a7d5eca95390
+    # Declared, not discovered. A trial expires and takes EVERY environment's
+    # compute with it at once -- including prod, which shares it today.
+    is_trial: true
+
+    # Intended successor when the trial ends.
+    #
+    # F2 IS NOT VIABLE FOR THIS PIPELINE and the validator fails on it.
+    # 2 capacity units against the trial's 64: the medallion run takes 13
+    # minutes on FTL64, so F2 is roughly 32x less compute. Spark will not
+    # refuse -- it allocates a minimal pool and either crawls for hours or dies
+    # on memory, with nothing in the logs pointing at capacity.
+    #
+    # Recorded anyway so the decision is visible rather than made under time
+    # pressure on the day the trial lapses. F8 is the realistic floor; size it
+    # against a real p_orchestrate_master run before committing.
+    fallback:
+      sku: F2
+      capacity_id: c035efb4-9e89-49c8-837d-c2ad80b618b0
+      note: >-
+        fabricdataf2. Placeholder only -- fails validation by design. Replace
+        with F8 or larger, or accept that the pipeline stops working when the
+        trial ends.
+
+auth:
+  mode: service_principal
+  client_id: ${FABRIC_CLIENT_ID}
+  client_secret_ref: keyvault://techtonic-kv/fabric-sp-secret
+
+# -----------------------------------------------------------------------------
+# Topology -- the one switch that decides workspace and storage layout
+# -----------------------------------------------------------------------------
+topology:
+  pattern: medallion
+  rationale: >-
+    Single delivery team with one release cadence, so the mesh preconditions
+    are unmet: no second team owns a pipeline end to end, and there is no
+    platform bottleneck that decentralising would relieve. Medallion keeps one
+    governance surface while the layering discipline is established. `domain`
+    is first-class throughout, so adopting mesh later is a topology change
+    rather than a spec rewrite.
+  # Quoted: in flow style an unquoted comma ends the value, so prose containing
+  # commas silently becomes extra keys rather than part of the description.
+  layers:
+    - { name: bronze, purpose: "Raw landing, ingested as-is, immutable, full history retained" }
+    - { name: silver, purpose: "Cleansed, deduplicated, conformed staging; business keys resolved" }
+    - { name: gold,   purpose: "Star schema and reporting views serving Power BI" }
+  mesh_sharing:            # ignored while pattern is medallion
+    mechanism: onelake_shortcut
+    publish_layer: gold
+
+domains:
+  - name: sales
+    description: Commerce transactions -- customers, orders, order lines, products
+    owner: data-engineering
+    sources: [commerce]
+    publishes_data_product: true
+
+# -----------------------------------------------------------------------------
+# Environments -- workspaces only; branches live in cicd/
+# -----------------------------------------------------------------------------
+environments:
+  - name: dev
+    workspace: AgenticAIDemo_dev
+    workspace_id: 13c508c8-8fe8-4539-9cf4-2b4a3b91b32f
+    capacity_sku: FTL64
+    provisioned_items:
+      provisioned_at: "2026-07-25"
+      storage:
+        lh_bronze: a0fb9f08-34e1-4ddc-93b2-3b6fae5417c8
+        lh_silver: cfc39a31-3507-459f-ba50-d4fe4718dfb7
+        wh_gold:   72d85a63-d8c6-4978-803a-fa5cc3e195d8
+
+  - name: qa
+    workspace: AgenticAIDemo_qa
+    workspace_id: ca418d16-23ac-41ab-b892-eaa1cd04e268
+    capacity_sku: FTL64
+
+  - name: uat
+    workspace: AgenticAIDemo_uat
+    workspace_id: 08f3d907-80fa-4e86-adfb-ef7d7e5fc34e
+    capacity_sku: FTL64
+
+  - name: prod
+    # No suffix, so this is the shortest and most innocuous name of the four.
+    # `is_production` marks it: destructive operations resolve it by ID, never
+    # by name.
+    workspace: AgenticAIDemo
+    workspace_id: 00e8f132-21d1-41ed-bbfc-ad3a223cf714
+    capacity_sku: FTL64
+    is_production: true
+
+# -----------------------------------------------------------------------------
+# Naming -- every generated item name resolves through here
+# -----------------------------------------------------------------------------
+naming:
+  workspace:
+    # Enumerated, not templated: prod breaks {prefix}_{env} by carrying no
+    # suffix, and a template plus a special case is worse than a list --
+    # because the special case is production.
+    medallion: { dev: AgenticAIDemo_dev, qa: AgenticAIDemo_qa, uat: AgenticAIDemo_uat, prod: AgenticAIDemo }
+    mesh: "{domain}Demo_{env}"
+
+  notebook: "nb_{verb}_{entity}"
+  pipeline: "p_{verb}_{layer}"
+  semantic_model: "sm_{domain}"
+  report: "rpt_{domain}_{purpose}"
+  deployment_pipeline: "dp-analytics"
+
+  # A verb per layer, so a name says what the item DOES. The layer is already
+  # carried by the storage item and the folder; repeating it would give
+  # nb_bronze_bronze_commerce_orders.
+  verbs: { bronze: load, silver: clean, gold: build, master: orchestrate }
+
+  pipelines:
+    bronze: p_load_bronze
+    silver: p_clean_silver
+    gold: p_build_gold
+    master: p_orchestrate_master
+
+  tables:
+    bronze: "bronze_{source}_{entity}"
+    # Silver holds cleansed STAGING, not a dimensional model. Naming it dim_/
+    # fct_ overstates what it is and puts dim_customers one character from
+    # gold's dim_customer -- different tables, different items, same-looking name.
+    silver: "stg_{entity}"
+    gold_dimension: "dim_{entity}"
+    gold_fact: "fct_{entity}"
+    gold_view: "vw_{purpose}"
+
+  # Enforced by the validator. A convention is only worth having if it cannot
+  # drift back.
+  table_prefixes:
+    silver: [stg_]
+    gold: [dim_, fct_, vw_]
+
+  casing: snake_case
+
+# -----------------------------------------------------------------------------
+# Storage -- split follows whichever axis OWNS the data
+# -----------------------------------------------------------------------------
+#   medallion -> the LAYER owns it. Retention, permissions and blast radius
+#                differ per layer, and an item is the smallest unit most
+#                Fabric settings apply to.
+#   mesh      -> the DOMAIN owns it. Splitting by layer would cut across team
+#                boundaries and put three teams inside every item.
+storage:
+  items:
+    medallion:
+      bronze: { item: lakehouse, name: lh_bronze }
+      silver: { item: lakehouse, name: lh_silver }
+      gold:   { item: warehouse, name: wh_gold }
+    mesh:
+      per_domain: { item: warehouse, name: "wh_{domain}" }
+
+  bronze:
+    item: lakehouse
+    landing_path: "Files/bronze/{source}/{entity}/ingest_date={ingest_date}"
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 730
+    immutable: true
+
+  silver:
+    item: lakehouse
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 365
+
+  gold:
+    item: warehouse
+    format: delta
+    schemas: { physical: dbo, reporting: bi }
+    # VERIFIED on this capacity: Spark writes to wh_gold.dbo via synapsesql.
+    # OVERWRITE ONLY -- `append` fails with "Write orchestration failed" and no
+    # root cause. Read, union, overwrite. lib/warehouse.py raises on any other
+    # mode rather than letting it fail opaquely several frames away.
+    write_mode: warehouse_connector
+    staging_path: "Files/staging/gold/{table}"
+
+# -----------------------------------------------------------------------------
+# Workspace folders -- organise ITEMS (OneLake paths above organise FILES)
+# -----------------------------------------------------------------------------
+# Item creation cannot set a folder; placement is applied separately by
+# deploy/organise_items.py, which makes this enforceable rather than aspirational.
+workspace_folders:
+  - name: "0_config"
+    layer: null
+    description: >-
+      Workspace configuration the layers bind to -- Spark runtime and library
+      versions, pinned per environment. Sorts first because it is what
+      everything downstream depends on.
+    contains:
+      - { item_type: Environment, name: env_spark }
+
+  - name: "1_bronze"
+    layer: bronze
+    description: Landing. One notebook per source entity, one pipeline to run them.
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_load_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_load_bronze }] }
+
+  - name: "2_silver"
+    layer: silver
+    description: Cleansing. Notebooks run in the dependency order the mapping declares.
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_clean_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_clean_silver }] }
+
+  - name: "3_gold"
+    layer: gold
+    description: Star schema. Dimensions before facts, enforced by the pipeline.
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_build_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_build_gold }] }
+
+  - name: "4_master"
+    layer: null
+    description: >-
+      End-to-end orchestration. Runs the three layer pipelines in order and
+      stops on the first failure, so a broken bronze load never silently
+      produces a stale gold table.
+    subfolders:
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_orchestrate_master }] }
+
+  - name: "5_datastore"
+    layer: null
+    description: >-
+      The lakehouses and warehouse the flow reads and writes. Separated from
+      0_config because a data store is not a setting -- they differ in
+      retention, permissions and blast radius.
+    contains:
+      - { item_type: Lakehouse, name: lh_bronze }
+      - { item_type: Lakehouse, name: lh_silver }
+      - { item_type: Warehouse, name: wh_gold }
+
+# -----------------------------------------------------------------------------
+# Audit columns -- injected by the generator, never declared in a mapping
+# -----------------------------------------------------------------------------
+audit_columns:
+  bronze:
+    - { name: _ingested_at,  type: timestamp, source: current_timestamp() }
+    - { name: _source,       type: string,    source: spec.source_system }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _source_file,  type: string,    source: runtime.input_file_name }
+  silver:
+    - { name: _processed_at, type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _record_hash,  type: string,    source: computed.row_hash }
+  gold:
+    - { name: _built_at,     type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+
+conventions:
+  require_business_key: true
+  require_declared_grain: true
+  require_exhaustive_column_mapping: true
+  require_source_registration: true
+  require_pii_classification: true

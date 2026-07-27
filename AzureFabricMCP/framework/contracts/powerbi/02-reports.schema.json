@@ -1,0 +1,132 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://techtonic/contracts/powerbi/02-reports.schema.json",
+  "title": "P2 Reports",
+  "description": "Reports over the P1 semantic model. Every field is a reference into that model, and validation resolves them -- a renamed measure breaks a report silently otherwise. AUTHORITATIVE: validation fails the build.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "reports"],
+
+  "properties": {
+    "version": { "const": 1 },
+
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "page_width": { "type": "integer", "default": 1280 },
+        "page_height": { "type": "integer", "default": 720 },
+        "theme": {
+          "type": "string",
+          "description": "Base theme name, e.g. CY24SU10. Omit for the workspace default."
+        }
+      }
+    },
+
+    "reports": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "model", "pages"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^rpt_[a-z0-9_]+$",
+            "description": "rpt_ prefix keeps reports distinguishable from the model and lakehouse items sharing the workspace."
+          },
+          "display_name": { "type": "string" },
+          "description": { "type": "string" },
+          "model": {
+            "type": "string",
+            "description": "The semantic model this binds to, e.g. sm_commerce. Must match model.name in 01-semantic-model.yaml -- the report is rebound to that model's id at deploy time."
+          },
+          "audience": {
+            "type": "string",
+            "description": "Who reads this and what decision it supports. Shapes what belongs on the page; a report without a stated audience accumulates visuals."
+          },
+
+          "pages": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "visuals"],
+              "properties": {
+                "name": { "type": "string" },
+                "display_name": { "type": "string" },
+                "width": { "type": "integer" },
+                "height": { "type": "integer" },
+                "description": { "type": "string" },
+
+                "visuals": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["type", "position"],
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "Power BI visual type. Common: card, multiRowCard, barChart, columnChart, clusteredBarChart, clusteredColumnChart, lineChart, areaChart, pieChart, donutChart, tableEx, matrix, slicer, gauge, kpi, treemap, scatterChart.",
+                        "examples": ["card", "clusteredColumnChart", "lineChart", "tableEx", "slicer"]
+                      },
+                      "title": { "type": "string" },
+                      "position": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["x", "y", "width", "height"],
+                        "properties": {
+                          "x": { "type": "number" },
+                          "y": { "type": "number" },
+                          "width": { "type": "number" },
+                          "height": { "type": "number" },
+                          "z": { "type": "integer" }
+                        }
+                      },
+                      "fields": {
+                        "type": "object",
+                        "description": "Visual role -> list of 'Table.Field' references. Roles depend on the visual type: card/tableEx/slicer use Values; bar and column charts use Category, Y and optionally Series; line charts use Category and Y.",
+                        "additionalProperties": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[^.]+\\.[^.]+$",
+                            "description": "Table.Field, using the DISPLAY names declared in the semantic model."
+                          }
+                        }
+                      },
+                      "sort": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": ["field"],
+                        "properties": {
+                          "field": { "type": "string", "pattern": "^[^.]+\\.[^.]+$" },
+                          "direction": { "enum": ["Ascending", "Descending"], "default": "Descending" }
+                        }
+                      },
+                      "filters": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": ["field"],
+                          "properties": {
+                            "field": { "type": "string", "pattern": "^[^.]+\\.[^.]+$" },
+                            "type": { "enum": ["Categorical", "Range", "Advanced", "TopN"], "default": "Categorical" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

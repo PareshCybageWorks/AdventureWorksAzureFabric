@@ -1,0 +1,11 @@
+# Framework dependencies for validation, generation and deployment.
+#
+# pyspark is deliberately ABSENT. It is supplied by the Fabric Spark runtime,
+# and installing a second copy here would let a notebook be validated against a
+# version that is not the one it runs on. Only ttfabric imports it, and only
+# inside a Fabric session.
+
+requests>=2.31
+PyYAML>=6.0
+jsonschema>=4.20
+azure-identity>=1.15

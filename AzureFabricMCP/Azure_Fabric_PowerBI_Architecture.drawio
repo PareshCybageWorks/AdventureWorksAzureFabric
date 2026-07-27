@@ -1,0 +1,223 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0">
+  <diagram id="arch-diagram" name="Azure Fabric + Power BI MCP Architecture">
+    <mxGraphModel dx="953" dy="532" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1800" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=center;verticalAlign=top;spacingTop=10;" value="Azure Fabric + Power BI MCP Architecture | Medallion Data Platform" vertex="1">
+          <mxGeometry height="40" width="1300" x="50" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="layer1-label" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="Layer 1: Data Ingestion Sources" vertex="1">
+          <mxGeometry height="20" width="300" x="50" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="source-apis" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4F8;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="APIs&#xa;REST, GraphQL&#xa;Real-time" vertex="1">
+          <mxGeometry height="70" width="100" x="60" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="source-db" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4F8;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="Databases&#xa;SQL, PostgreSQL&#xa;Relational" vertex="1">
+          <mxGeometry height="70" width="100" x="180" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="source-files" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4F8;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="Files&#xa;CSV, Parquet&#xa;JSON" vertex="1">
+          <mxGeometry height="70" width="100" x="300" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="source-stream" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4F8;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="Event Streams&#xa;Kafka, Event Hub&#xa;Streaming" vertex="1">
+          <mxGeometry height="70" width="100" x="420" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="source-cloud" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F4F8;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="Cloud Storage&#xa;Azure Blob&#xa;ADLS Gen2" vertex="1">
+          <mxGeometry height="70" width="100" x="540" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-to-bronze" edge="1" parent="1" source="source-apis" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="layer2-label" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="Layer 2: Fabric Lakehouse - Medallion Architecture" vertex="1">
+          <mxGeometry height="20" width="150" x="50" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="bronze-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A0826D;opacity=20;strokeColor=#A0826D;strokeWidth=2;fontSize=6;" value="" vertex="1">
+          <mxGeometry height="135" width="280" x="50" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="bronze-title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=center;verticalAlign=top;" value="🔷 BRONZE - Raw Data Layer" vertex="1">
+          <mxGeometry height="20" width="260" x="60" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="bronze-cust" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8B7355;strokeWidth=1;fontSize=6;" value="shopify_customers.delta&#xa;Raw Data" vertex="1">
+          <mxGeometry height="50" width="75" x="65" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="bronze-order" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8B7355;strokeWidth=1;fontSize=6;" value="shopify_orders.delta&#xa;Raw Data" vertex="1">
+          <mxGeometry height="50" width="75" x="155" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="bronze-prod" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8B7355;strokeWidth=1;fontSize=6;" value="shopify_products.delta&#xa;Raw Data" vertex="1">
+          <mxGeometry height="50" width="75" x="245" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="bronze-desc" parent="1" style="text;html=1;fontSize=6;align=center;verticalAlign=top;" value="✓ Immutable history&#xa;✓ Full fidelity&#xa;✓ Audit trail" vertex="1">
+          <mxGeometry height="30" width="260" x="60" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="silver-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#C0C0C0;opacity=20;strokeColor=#C0C0C0;strokeWidth=2;fontSize=6;" value="" vertex="1">
+          <mxGeometry height="135" width="280" x="350" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="silver-title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=center;verticalAlign=top;" value="🔶 SILVER - Transformed Data" vertex="1">
+          <mxGeometry height="20" width="260" x="360" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="silver-cust" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#A9A9A9;strokeWidth=1;fontSize=6;" value="dim_customers.delta&#xa;Cleaned" vertex="1">
+          <mxGeometry height="50" width="75" x="365" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="silver-order" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#A9A9A9;strokeWidth=1;fontSize=6;" value="fct_orders.delta&#xa;Validated" vertex="1">
+          <mxGeometry height="50" width="75" x="455" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="silver-prod" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#A9A9A9;strokeWidth=1;fontSize=6;" value="dim_products.delta&#xa;Deduplicated" vertex="1">
+          <mxGeometry height="50" width="75" x="545" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="silver-desc" parent="1" style="text;html=1;fontSize=6;align=center;verticalAlign=top;" value="✓ Deduplicated&#xa;✓ Business rules&#xa;✓ Ready for BI" vertex="1">
+          <mxGeometry height="30" width="260" x="360" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="gold-container" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFD700;opacity=20;strokeColor=#FFD700;strokeWidth=2;fontSize=6;" value="" vertex="1">
+          <mxGeometry height="135" width="280" x="650" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="gold-title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=center;verticalAlign=top;" value="🏆 GOLD - Analytics Ready" vertex="1">
+          <mxGeometry height="20" width="260" x="660" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="gold-sales" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#DAA520;strokeWidth=1;fontSize=6;" value="sales_analytics.delta&#xa;Aggregated" vertex="1">
+          <mxGeometry height="50" width="80" x="665" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="gold-customer" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#DAA520;strokeWidth=1;fontSize=6;" value="customer_analytics.delta&#xa;Metrics" vertex="1">
+          <mxGeometry height="50" width="80" x="760" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="gold-product" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#DAA520;strokeWidth=1;fontSize=6;" value="product_performance.delta&#xa;BI Ready" vertex="1">
+          <mxGeometry height="50" width="80" x="855" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="gold-desc" parent="1" style="text;html=1;fontSize=6;align=center;verticalAlign=top;" value="✓ Aggregated metrics&#xa;✓ Pre-calculated&#xa;✓ BI optimized" vertex="1">
+          <mxGeometry height="30" width="90" x="660" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="sql-endpoint" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F8FF;strokeColor=#4169E1;strokeWidth=2;fontSize=6;" value="SQL Endpoints&#xa;T-SQL Access" vertex="1">
+          <mxGeometry height="50" width="90" x="950" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="dbt-transform" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F3FF;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="DBT&#xa;Transformations&#xa;Testing" vertex="1">
+          <mxGeometry height="50" width="90" x="950" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-b2s" edge="1" parent="1" source="bronze-order" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="silver-order" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-s2g" edge="1" parent="1" source="silver-order" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="gold-sales" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="layer3-label" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="Layer 3: Data Quality &amp;amp; Operations" vertex="1">
+          <mxGeometry height="20" width="300" x="50" y="389" as="geometry" />
+        </mxCell>
+        <mxCell id="quality-expect" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5E6D3;strokeColor=#D4A574;strokeWidth=2;fontSize=6;" value="Great Expectations&#xa;Quality Checks&#xa;Validation" vertex="1">
+          <mxGeometry height="70" width="120" x="50" y="424" as="geometry" />
+        </mxCell>
+        <mxCell id="quality-sla" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5E6D3;strokeColor=#D4A574;strokeWidth=2;fontSize=6;" value="SLA Monitoring&#xa;Freshness &amp;amp;&#xa;Completeness" vertex="1">
+          <mxGeometry height="70" width="120" x="190" y="424" as="geometry" />
+        </mxCell>
+        <mxCell id="quality-contract" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5E6D3;strokeColor=#D4A574;strokeWidth=2;fontSize=6;" value="Data Contracts&#xa;Governance&#xa;Compliance" vertex="1">
+          <mxGeometry height="70" width="120" x="330" y="424" as="geometry" />
+        </mxCell>
+        <mxCell id="quality-audit" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5E6D3;strokeColor=#D4A574;strokeWidth=2;fontSize=6;" value="Audit Logging&#xa;Change Tracking&#xa;Compliance" vertex="1">
+          <mxGeometry height="70" width="120" x="470" y="424" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-g2q" edge="1" parent="1" source="gold-sales" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="quality-expect" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="layer4-label" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="Layer 4: Power BI Analytics &amp;amp; Reporting" vertex="1">
+          <mxGeometry height="20" width="300" x="50" y="499" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-model" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE4B5;strokeColor=#FF8C00;strokeWidth=2;fontSize=6;" value="Semantic Model&#xa;Star Schema&#xa;Relationships" vertex="1">
+          <mxGeometry height="70" width="120" x="50" y="534" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-dax" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE4B5;strokeColor=#FF8C00;strokeWidth=2;fontSize=6;" value="DAX Measures&#xa;YTD, YoY, LTV&#xa;Aggregations" vertex="1">
+          <mxGeometry height="70" width="120" x="190" y="534" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-dash" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE4B5;strokeColor=#FF8C00;strokeWidth=2;fontSize=6;" value="Dashboards&#xa;Executive,&#xa;Operational" vertex="1">
+          <mxGeometry height="70" width="120" x="330" y="534" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-reports" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE4B5;strokeColor=#FF8C00;strokeWidth=2;fontSize=6;" value="Reports&#xa;Paginated &amp;amp;&#xa;Mobile" vertex="1">
+          <mxGeometry height="70" width="120" x="470" y="534" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-q2p" edge="1" parent="1" source="quality-expect" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="powerbi-model" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="layer5-label" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="Layer 5: Deployment &amp;amp; Automation (CI/CD)" vertex="1">
+          <mxGeometry height="20" width="350" x="50" y="609" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd-github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;opacity=40;strokeColor=#8B6F47;strokeWidth=2;fontSize=6;" value="GitHub Actions&#xa;Workflows&#xa;CI/CD" vertex="1">
+          <mxGeometry height="70" width="110" x="45" y="629" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd-dev" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;opacity=40;strokeColor=#8B6F47;strokeWidth=2;fontSize=6;" value="DEV&#xa;Environment&#xa;Testing" vertex="1">
+          <mxGeometry height="70" width="110" x="175" y="629" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd-qa" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;opacity=40;strokeColor=#8B6F47;strokeWidth=2;fontSize=6;" value="QA&#xa;Environment&#xa;Validation" vertex="1">
+          <mxGeometry height="70" width="110" x="305" y="629" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd-prod" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#D4A574;opacity=40;strokeColor=#8B6F47;strokeWidth=2;fontSize=6;" value="PROD&#xa;Environment&#xa;Live" vertex="1">
+          <mxGeometry height="70" width="110" x="435" y="629" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-cicd" edge="1" parent="1" source="powerbi-reports" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="cicd-github" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-dev-qa" edge="1" parent="1" source="cicd-dev" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="cicd-qa" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-qa-prod" edge="1" parent="1" source="cicd-qa" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=6;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="cicd-prod" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="layer6-label" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="Layer 6: MCP Servers &amp;amp; AI Orchestration" vertex="1">
+          <mxGeometry height="20" width="400" x="50" y="699" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp-fabric" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ADD8E6;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="Fabric MCP&#xa;Workspace Ops&#xa;Lakehouse Mgmt" vertex="1">
+          <mxGeometry height="70" width="100" x="50" y="734" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp-powerbi" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ADD8E6;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="Power BI MCP&#xa;Semantic Models&#xa;Deployment" vertex="1">
+          <mxGeometry height="70" width="100" x="170" y="734" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp-dbt" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ADD8E6;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="DBT Cloud API&#xa;Transformations&#xa;Testing" vertex="1">
+          <mxGeometry height="70" width="100" x="290" y="734" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp-github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ADD8E6;strokeColor=#4B90E2;strokeWidth=2;fontSize=6;" value="GitHub API&#xa;CI/CD Workflows&#xa;Automation" vertex="1">
+          <mxGeometry height="70" width="100" x="410" y="734" as="geometry" />
+        </mxCell>
+        <mxCell id="mcp-claude" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#90EE90;strokeColor=#228B22;strokeWidth=2;fontSize=6;" value="Claude AI&#xa;Orchestration&#xa;Automation" vertex="1">
+          <mxGeometry height="70" width="100" x="530" y="734" as="geometry" />
+        </mxCell>
+        <mxCell id="support-monitor" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#CCFFCC;strokeColor=#7ED321;strokeWidth=2;fontSize=6;" value="📊 Monitoring&#xa;Health Checks&#xa;Metrics &amp;amp; Alerts" vertex="1">
+          <mxGeometry height="70" width="120" x="660" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="support-security" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCCCC;strokeColor=#FF6B6B;strokeWidth=2;fontSize=6;" value="🔒 Security&#xa;Authentication&#xa;RLS/OLS" vertex="1">
+          <mxGeometry height="70" width="120" x="800" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="support-compliance" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFCCCC;strokeColor=#FF6B6B;strokeWidth=2;fontSize=6;" value="✓ Compliance&#xa;Auditing&#xa;Governance" vertex="1">
+          <mxGeometry height="70" width="120" x="940" y="125" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="📋 Legend" vertex="1">
+          <mxGeometry height="20" width="100" x="850" y="230" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-sync" parent="1" style="text;html=1;fontSize=6;align=left;verticalAlign=top;" value="→ Synchronous Flow" vertex="1">
+          <mxGeometry height="20" width="150" x="850" y="260" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-async" parent="1" style="text;html=1;fontSize=6;align=left;verticalAlign=top;" value="⇢ Asynchronous Flow" vertex="1">
+          <mxGeometry height="20" width="150" x="850" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="metrics-title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="📈 Key Metrics" vertex="1">
+          <mxGeometry height="20" width="100" x="760" y="335" as="geometry" />
+        </mxCell>
+        <mxCell id="metric-quality" parent="1" style="text;html=1;fontSize=6;align=left;" value="✓ Quality: 99%+" vertex="1">
+          <mxGeometry height="15" width="50" x="765" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="metric-perf" parent="1" style="text;html=1;fontSize=6;align=left;" value="✓ End-to-End: &amp;lt;5 min" vertex="1">
+          <mxGeometry height="15" width="60" x="815" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="metric-avail" parent="1" style="text;html=1;fontSize=6;align=left;" value="✓ Availability: 99.99%" vertex="1">
+          <mxGeometry height="15" width="60" x="870" y="355" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F0F8FF;strokeColor=#4169E1;strokeWidth=2;fontSize=6;" value="🔄 Complete Data Flow:&#xa;Ingestion → Bronze → Silver (DBT) → Gold&#xa;→ Quality Checks → Power BI → Reports → Monitoring" vertex="1">
+          <mxGeometry height="80" width="420" x="630" y="424" as="geometry" />
+        </mxCell>
+        <mxCell id="roadmap-title" parent="1" style="text;html=1;fontSize=6;fontStyle=1;align=left;verticalAlign=top;" value="📅 Implementation (8 Weeks)" vertex="1">
+          <mxGeometry height="20" width="200" x="750" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="roadmap-text" parent="1" style="text;html=1;fontSize=6;align=left;fontFamily=monospace;" value="Week 1: Infrastructure&#xa;Week 2-3: Data Engineering&#xa;Week 4: Quality &amp;amp; Ops&#xa;Week 5: Analytics&#xa;Week 6-7: Automation&#xa;Week 8: Operations" vertex="1">
+          <mxGeometry height="60" width="75" x="745" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="footer" parent="1" style="text;html=1;fontSize=6;align=center;verticalAlign=top;fillColor=#F5F5F5;strokeColor=#999;strokeWidth=1;" value="Azure Fabric + Power BI MCP Architecture v1.0 | Production Ready ✅ | Last Updated: July 20, 2026" vertex="1">
+          <mxGeometry height="30" width="1300" x="50" y="1750" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
