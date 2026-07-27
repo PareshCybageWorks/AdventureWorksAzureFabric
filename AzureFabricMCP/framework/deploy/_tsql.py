@@ -98,13 +98,29 @@ def with_retry(method: str, url: str, *, attempts: int = 4, **kwargs):
     raise RuntimeError(f"{method} {url} failed after {attempts} attempts")
 
 
-def credential():
-    """Service principal when the environment supplies one, else the CLI login."""
+def credential(secret_ref: str | None = None):
+    """Service principal when one is available, else the CLI login.
+
+    `secret_ref` is a spec reference such as
+    `keyvault://techtonic-kv/fabric-sp-secret`. It is resolved only when the
+    environment does not already carry the secret, so CI keeps using the
+    variables GitHub injects and never makes a round trip to Key Vault.
+
+    Falling back to the CLI login is what lets a developer run any of this
+    without a service principal at all.
+    """
     from azure.identity import AzureCliCredential, ClientSecretCredential
 
     client_id = os.getenv("AZURE_CLIENT_ID") or os.getenv("FABRIC_CLIENT_ID")
     secret = os.getenv("AZURE_CLIENT_SECRET") or os.getenv("FABRIC_CLIENT_SECRET")
     tenant = os.getenv("AZURE_TENANT_ID") or os.getenv("FABRIC_TENANT_ID")
+
+    if client_id and tenant and not secret and secret_ref:
+        # The id and tenant are known but the secret is not in the environment,
+        # which is the case a vault exists for.
+        import _secrets
+        secret = _secrets.resolve(secret_ref, required=False)
+
     if client_id and secret and tenant:
         return ClientSecretCredential(tenant, client_id, secret)
     return AzureCliCredential()
