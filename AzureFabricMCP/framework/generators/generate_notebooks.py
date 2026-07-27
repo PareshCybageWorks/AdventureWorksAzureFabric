@@ -989,6 +989,126 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def bi_views_notebook(platform: dict, gold: dict) -> dict:
+    """Create the `bi` reporting views, after the tables they read exist.
+
+    The views select from dbo.dim_* and dbo.fct_*, and those tables are created
+    by SPARK through the warehouse connector when the gold notebooks run -- not
+    by DDL, deliberately, so that nothing races the connector over the same
+    definition.
+
+    That makes the views un-creatable at deploy time on a fresh environment.
+    Running the migration before the first load produced
+    `Invalid object name 'dbo.fct_sales'` on all four, and only the DQ gate
+    noticed: every deploy step reported success, and the semantic model binds to
+    dbo, so nothing looked wrong until someone opened a report.
+
+    So the views are built HERE, as the last step of the gold pipeline, once
+    every dimension and fact has been written. CREATE OR ALTER means a re-run
+    converges rather than failing.
+
+    T-SQL over JDBC: the Spark connector reads and writes tables but issues no
+    DDL, and the REST API manages items rather than their contents.
+    """
+    reporting = gold["defaults"].get("reporting_schema", "bi")
+    physical = gold["defaults"].get("physical_schema", "dbo")
+    warehouse = ((platform.get("storage") or {}).get("items") or {}).get(
+        "medallion", {}).get("gold", {}).get("name", "wh_gold")
+
+    statements = []
+    for view in gold.get("views", []):
+        schema = view.get("schema", reporting)
+        body = view["sql"].rstrip().rstrip(";")
+        statements.append(
+            f"CREATE OR ALTER VIEW [{schema}].[{view['name']}] AS\n{body}")
+
+    cells = [
+        markdown_cell(
+            "# Build the reporting views\n\n"
+            "Generated from `fabric/05-gold.yaml` — do not edit by hand.\n\n"
+            "Runs **after every dimension and fact**, because these views "
+            "select from tables that Spark creates through the warehouse "
+            "connector. They cannot exist before the first load, which is why "
+            "they are built here rather than by a deploy-time migration.\n\n"
+            "`CREATE OR ALTER`, so a re-run converges instead of failing."
+        ),
+        code_cell(
+            f"WAREHOUSE = {warehouse!r}\n"
+            f"REPORTING_SCHEMA = {reporting!r}\n"
+            f"PHYSICAL_SCHEMA = {physical!r}\n"
+            "\n"
+            f"VIEWS = {pprint.pformat([v['name'] for v in gold.get('views', [])], width=80)}\n"
+            f"STATEMENTS = {pprint.pformat(statements, width=100)}\n"
+        ),
+        code_cell(
+            "import com.microsoft.spark.fabric  # noqa: F401  registers the connector\n"
+            "\n"
+            "# The warehouse SQL endpoint, resolved from the item itself rather\n"
+            "# than hard-coded, so this notebook promotes unchanged.\n"
+            "endpoint = (spark.conf.get('trident.workspace.id'), WAREHOUSE)\n"
+            "import sempy.fabric as fabric_api\n"
+            "wh = [w for w in fabric_api.list_items('Warehouse').itertuples()\n"
+            "      if w[fabric_api.list_items('Warehouse').columns.get_loc('Display Name') + 1]\n"
+            "      == WAREHOUSE]\n"
+        ),
+    ]
+
+    # sempy is not guaranteed present; resolve the endpoint the way every other
+    # warehouse-touching notebook does instead.
+    cells[-1] = code_cell(
+        "import com.microsoft.spark.fabric  # noqa: F401  registers the connector\n"
+        "import requests\n"
+        "\n"
+        "workspace_id = spark.conf.get('trident.workspace.id')\n"
+        "token = mssparkutils.credentials.getToken('https://api.fabric.microsoft.com')\n"
+        "\n"
+        "# Resolved at RUN time from the workspace this notebook is in, so the\n"
+        "# same artefact points at dev's warehouse in dev and qa's in qa.\n"
+        "warehouses = requests.get(\n"
+        "    f'https://api.fabric.microsoft.com/v1/workspaces/{workspace_id}/warehouses',\n"
+        "    headers={'Authorization': f'Bearer {token}'}, timeout=60).json()['value']\n"
+        "target = next(w for w in warehouses if w['displayName'] == WAREHOUSE)\n"
+        "endpoint = target['properties']['connectionString']\n"
+        "print(f'{WAREHOUSE} -> {endpoint}')\n"
+    )
+
+    cells.append(code_cell(
+        "sql_token = mssparkutils.credentials.getToken('https://database.windows.net/')\n"
+        "jvm = spark._jvm\n"
+        "props = jvm.java.util.Properties()\n"
+        "props.setProperty('accessToken', sql_token)\n"
+        "props.setProperty('encrypt', 'true')\n"
+        "conn = jvm.java.sql.DriverManager.getConnection(\n"
+        "    f'jdbc:sqlserver://{endpoint}:1433;database={WAREHOUSE}', props)\n"
+        "conn.setAutoCommit(True)\n"
+        "stmt = conn.createStatement()\n"
+        "\n"
+        "# Each view is applied independently. One malformed view must not stop\n"
+        "# the other three -- and a single aggregate error hides how many were\n"
+        "# actually fine.\n"
+        "failed = []\n"
+        "for name, sql in zip(VIEWS, STATEMENTS):\n"
+        "    try:\n"
+        "        stmt.execute(sql)\n"
+        "        print(f'  ok      {REPORTING_SCHEMA}.{name}')\n"
+        "    except Exception as exc:\n"
+        "        failed.append(name)\n"
+        "        print(f'  FAILED  {REPORTING_SCHEMA}.{name}: {str(exc)[:160]}')\n"
+        "\n"
+        "stmt.close(); conn.close()\n"
+        "\n"
+        "if failed:\n"
+        "    raise RuntimeError(\n"
+        "        f'{len(failed)} of {len(VIEWS)} view(s) could not be created: '\n"
+        "        + ', '.join(failed))\n"
+        "print(f'\\nall {len(VIEWS)} reporting view(s) are current')\n"
+    ))
+
+    silver_item = ((platform.get("storage") or {}).get("items") or {}).get(
+        "medallion", {}).get("silver", {}).get("name", "lh_silver")
+    return notebook(cells, default_lakehouse=silver_item)
+
+
 def cascade_notebook(platform: dict, silver: dict) -> dict:
     """Propagate parent rejections to their children, after the whole layer.
 
@@ -1109,6 +1229,13 @@ def main() -> int:
     for fact in gold.get("facts", []):
         planned[out_dir / name_for("gold", fact["name"])] = render(
             gold_fact_notebook(platform, fact, gold)
+        )
+
+    # Named nb_build_bi_views so it matches the gold verb and the nb_build_*
+    # folder pattern, and is filed with the rest of the layer automatically.
+    if gold.get("views"):
+        planned[out_dir / "nb_build_bi_views.ipynb"] = render(
+            bi_views_notebook(platform, gold)
         )
 
     if args.check:

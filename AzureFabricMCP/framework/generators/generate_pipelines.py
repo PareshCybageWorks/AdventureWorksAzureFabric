@@ -159,12 +159,27 @@ def build_gold(platform: dict, gold: dict) -> dict:
     dimension_names = [nb(d["name"]) for d in gold.get("dimensions", [])]
     activities = [notebook_activity(name) for name in dimension_names]
 
+    fact_names = []
     for fact in gold.get("facts", []):
         # A fact resolves every dimension's surrogate key, so it waits on all
         # of them rather than only the ones it names -- a dimension still
         # building would yield unresolved keys that the unknown member would
         # quietly absorb.
         activities.append(notebook_activity(nb(fact["name"]), dimension_names))
+        fact_names.append(nb(fact["name"]))
+
+    # The reporting views go LAST, after every table they select from exists.
+    #
+    # They cannot be created at deploy time: the dbo tables are written by Spark
+    # through the warehouse connector, not by DDL, so on a fresh environment the
+    # migration failed with `Invalid object name 'dbo.fct_sales'` on all four
+    # views -- and every deploy step still reported success. Only the DQ gate
+    # caught it, because the semantic model binds to dbo and nothing else looked
+    # wrong until a report was opened.
+    if gold.get("views"):
+        activities.append(notebook_activity(
+            "nb_build_bi_views", dimension_names + fact_names))
+
     return wrap(activities)
 
 

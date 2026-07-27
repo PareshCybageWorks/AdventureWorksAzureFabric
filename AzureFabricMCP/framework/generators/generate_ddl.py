@@ -89,7 +89,13 @@ def build(gold: dict) -> dict[str, str]:
         schemas += schema_ddl(schema) + "\n"
     files["V001__schemas.sql"] = schemas
 
-    views = gold.get("views", [])
+    # The `bi` views are NOT emitted here any more. They select from dbo tables
+    # that Spark creates through the warehouse connector, so they cannot exist
+    # until after the first gold run -- a deploy-time migration failed with
+    # `Invalid object name 'dbo.fct_sales'` on a fresh environment. They are
+    # built by nb_build_bi_views as the last step of the gold pipeline instead,
+    # from this same spec, so there is one definition and one mechanism.
+    views: list = []
     if views:
         body = HEADER.format(filename="V002__bi_views.sql")
         body += (

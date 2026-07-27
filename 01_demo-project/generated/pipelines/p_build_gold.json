@@ -87,6 +87,48 @@
           "parameters": {},
           "workspaceId": "@@workspace@@"
         }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_build_dim_customer",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_build_dim_product",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_build_dim_date",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_build_fct_sales",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_build_bi_views",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_build_bi_views@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
       }
     ]
   }
