@@ -19,11 +19,20 @@ a commit in that project saying so.
 | this one | the framework, tagged `v0.1.0` |
 | [demoproject_azurefabricmcp](https://github.com/PareshCybageWorks/demoproject_azurefabricmcp) | the commerce demo project |
 
-Clone them side by side; every path below resolves the same way locally as it
-does in CI, where the framework is checked out to `AzureFabricMCP/`.
+Clone them side by side, and **clone this repository into a directory named
+`AzureFabricMCP`**:
+
+```bash
+git clone https://github.com/PareshCybageWorks/Azure_DataBIIntegration_MCP.git AzureFabricMCP
+```
+
+The name is not cosmetic. CI checks this repository out to `AzureFabricMCP/`,
+so matching it locally is what makes every path below resolve identically in
+both places — and a path that only works on one of them fails on someone
+else's pull request rather than on yours.
 
 ```
-AzureFabricMCP/          the framework -- reusable, no project data ever
+AzureFabricMCP/          THIS repository, cloned under that name
 ├── framework/
 │   ├── contracts/       JSON Schema per spec kind -- AUTHORITATIVE
 │   ├── prompts/         per-stage procedure: ask, derive, validate, gate
@@ -33,7 +42,8 @@ AzureFabricMCP/          the framework -- reusable, no project data ever
 │   ├── ttfabric/        PySpark runtime, shipped as a wheel on the Spark Environment
 │   ├── tools/           sample data, dry run, warehouse and model queries
 │   └── tests/           runs without Spark or pytest
-└── skills/              deep platform knowledge, read on demand
+├── skills/              deep platform knowledge, read on demand
+└── docs/                CI setup and operational notes
 
 <project>/               a project, in its own repo -- authored design only
 ├── fabric/              F1-F5
@@ -48,7 +58,7 @@ AzureFabricMCP/          the framework -- reusable, no project data ever
 repository and pins a framework tag; none of them contain framework code, and
 this repository contains no project data.
 
-Start with [`AzureFabricMCP/framework/INDEX.md`](AzureFabricMCP/framework/INDEX.md)
+Start with [`framework/INDEX.md`](framework/INDEX.md)
 — it maps the whole framework in one screen so you can open only what a task
 needs.
 

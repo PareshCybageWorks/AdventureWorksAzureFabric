@@ -176,9 +176,12 @@ Set it last, once steps 1–4 are done.
 Run the CI job locally first. A workflow whose first execution is on a pull
 request is a workflow whose first failure is public.
 
+Run these from the PROJECT repository, with this framework cloned as a sibling
+directory named `AzureFabricMCP` — the same relative path CI checks it out to.
+
 ```bash
-python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
-python AzureFabricMCP/framework/tests/test_monitoring.py
+python ../AzureFabricMCP/framework/generators/validate.py --project .
+python ../AzureFabricMCP/framework/tests/test_monitoring.py
 ```
 
 Then check the principal can actually reach Fabric, using the same credential
@@ -186,8 +189,8 @@ resolution the deploy scripts use:
 
 ```bash
 AZURE_CLIENT_ID=... AZURE_CLIENT_SECRET=... AZURE_TENANT_ID=... \
-  python AzureFabricMCP/framework/deploy/provision_storage.py \
-    --project 01_demo-project --env qa --dry-run
+  python ../AzureFabricMCP/framework/deploy/provision_storage.py \
+    --project . --env qa --dry-run
 ```
 
 That reads the workspace and creates nothing. If it lists the four items, the
@@ -218,5 +221,5 @@ advisory finding.
 To see the position without blocking a deploy:
 
 ```bash
-python AzureFabricMCP/framework/tools/run_monitor.py   --project 01_demo-project --env qa --report-only
+python ../AzureFabricMCP/framework/tools/run_monitor.py --project . --env qa --report-only
 ```

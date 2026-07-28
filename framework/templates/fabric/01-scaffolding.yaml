@@ -17,7 +17,10 @@ metadata:
   description: <one line>
   owner: <team, not a person>
   contact: <email>
-  framework_path: ../../AzureFabricMCP/framework
+  # The framework is a SEPARATE repository, cloned as a sibling directory
+  # named AzureFabricMCP. CI checks it out to the same relative path, so this
+  # value resolves identically in both places.
+  framework_path: ../AzureFabricMCP/framework
 
 tenant:
   tenant_id: ${FABRIC_TENANT_ID}
