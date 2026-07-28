@@ -16,7 +16,20 @@ python framework/tools/new_project.py --name 02_your-project
 ```
 
 Creates the folders, copies all ten stage templates, and writes a README with
-the order to fill them in. **Validation fails immediately on a fresh project --
+the order to fill them in.
+
+**To fill them in as a conversation, follow `prompts/00-interview.md`** — it
+sequences the ten stages, and carries how to ask, what to derive rather than
+ask, and what to refuse to guess. To find out where an unfinished project got
+to, in any session:
+
+```bash
+python framework/tools/project_status.py --project 02_your-project
+```
+
+Status is derived from the specs themselves — a stage is unfinished if it still
+holds placeholders or fails validation — so there is no progress file to fall
+out of step with reality. **Validation fails immediately on a fresh project --
 that is intended.** The templates carry `<placeholder>` values, and a validator
 that passed on an unfilled template would be worthless on a filled one.
 
