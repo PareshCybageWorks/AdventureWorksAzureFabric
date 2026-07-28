@@ -130,6 +130,9 @@ storage:
 # `branch` is absent on purpose -- read from environments[].branch above.
 # git_integration:
 #   provider: GitHub                        # or AzureDevOps
+#   # GitHub:      <owner>/<repo>
+#   # AzureDevOps: <organisation>/<project>/<repo>  -- the project is a
+#   #              separate level and cannot be inferred from the other two
 #   repository: <owner>/<repo>
 #   directory: /AzureFabricCode             # must NOT overlap generated/ or a
 #                                           # spec folder: Fabric rewrites the

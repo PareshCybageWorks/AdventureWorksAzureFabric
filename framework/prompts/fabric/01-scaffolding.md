@@ -150,6 +150,20 @@ Two prerequisites no script can satisfy:
   belongs in the spec. Azure DevOps needs neither — it authenticates as the
   calling user, which is worth knowing before choosing a provider.
 
+The two providers also take different **fields**, not merely different
+credentials:
+
+| Provider | `repository` |
+|---|---|
+| GitHub | `<owner>/<repo>` |
+| Azure DevOps | `<organisation>/<project>/<repo>` |
+
+Azure DevOps addresses a repo by organisation *and* project; the project is a
+separate level and cannot be inferred from the other two. Getting it wrong is
+rejected by the API as a missing field, which reads like a malformed request
+rather than the wrong shape for the provider — so validation checks the part
+count against the provider instead.
+
 Mirror `dev` only unless there is a reason not to. Promoted environments
 receive the same artefacts, so mirroring them records the same thing again
 under another branch.

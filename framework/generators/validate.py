@@ -724,14 +724,35 @@ def check_git_integration(specs: dict, report: Report) -> None:
             f"rewrites everything beneath it, so a UI edit would overwrite a "
             f"generated artefact and no-drift would fail on a file nobody touched")
 
-    # GitHub cannot authenticate as the caller, so without a connection the
-    # connect call fails -- but only once someone runs it against a tenant that
-    # has the feature enabled, which is the slowest possible way to find out.
-    if block.get("provider") == "GitHub" and not block.get("connection_id"):
-        errors.append(
-            "provider is GitHub but no connection_id is declared. GitHub needs a "
-            "Fabric connection holding a PAT; only Azure DevOps can authenticate "
-            "as the calling user")
+    # The providers take different FIELDS, not merely different credentials.
+    # Azure DevOps is addressed by organisation, project and repository; GitHub
+    # by owner and repository. Getting it wrong is rejected by the API as a
+    # missing field, which reads like a malformed request rather than the wrong
+    # shape for the provider.
+    provider = block.get("provider")
+    parts = [p for p in block.get("repository", "").split("/") if p]
+
+    if provider == "AzureDevOps":
+        if len(parts) != 3:
+            errors.append(
+                f"provider is AzureDevOps, so repository must be "
+                f"<organisation>/<project>/<repo>; got {block.get('repository')!r} "
+                f"({len(parts)} part(s)). The project is a separate level and "
+                f"cannot be inferred from the other two")
+        if block.get("connection_id"):
+            report.warn("git-integration",
+                        "connection_id is set but Azure DevOps authenticates as the "
+                        "calling user; it will be ignored")
+    elif provider == "GitHub":
+        if len(parts) != 2:
+            errors.append(
+                f"provider is GitHub, so repository must be <owner>/<repo>; got "
+                f"{block.get('repository')!r} ({len(parts)} part(s))")
+        if not block.get("connection_id"):
+            errors.append(
+                "provider is GitHub but no connection_id is declared. GitHub needs "
+                "a Fabric connection holding a PAT; only Azure DevOps can "
+                "authenticate as the calling user")
 
     declared = {e["name"] for e in scaffolding.get("environments") or []}
     for name in block.get("environments") or []:

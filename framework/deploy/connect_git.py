@@ -173,7 +173,12 @@ def report(workspace: str) -> int:
     details = state.get("gitProviderDetails") or {}
     if details:
         print(f"  provider     {details.get('gitProviderType')}")
-        print(f"  repository   {details.get('ownerName')}/{details.get('repositoryName')}")
+        # Azure DevOps reports organisation/project, GitHub reports an owner.
+        scope = "/".join(p for p in (details.get("organizationName"),
+                                     details.get("projectName"),
+                                     details.get("ownerName"),
+                                     details.get("repositoryName")) if p)
+        print(f"  repository   {scope}")
         print(f"  branch       {details.get('branchName')}")
         print(f"  directory    {details.get('directoryName')}")
 
@@ -227,7 +232,7 @@ def connect(project: Path, env: str, message: str) -> int:
         print(f"  REFUSED  {env!r} is production.")
         return 2
 
-    owner, _, repository = block["repository"].partition("/")
+    parts = [p for p in block["repository"].split("/") if p]
     directory = block["directory"]
 
     # An overlap silently hands Fabric write access over generated artefacts:
@@ -240,8 +245,38 @@ def connect(project: Path, env: str, message: str) -> int:
               f"           Fabric owns everything beneath it and would overwrite them.")
         return 2
 
+    # The two providers do not merely differ in credentials -- they take
+    # different FIELDS. Azure DevOps is addressed by organisation, project and
+    # repository; GitHub by owner and repository. Sending GitHub's shape to
+    # Azure DevOps is rejected for a missing field, which reads like a bad
+    # request rather than the wrong provider.
+    if block["provider"] == "AzureDevOps":
+        if len(parts) != 3:
+            print(f"  ERROR  Azure DevOps needs `repository` as "
+                  f"<organisation>/<project>/<repo>.\n"
+                  f"         Got {block['repository']!r} ({len(parts)} part(s)). The "
+                  f"project is a\n         separate level and cannot be inferred "
+                  f"from the other two.")
+            return 1
+        organisation, adoproject, repository = parts
+        details = {"gitProviderType": "AzureDevOps",
+                   "organizationName": organisation,
+                   "projectName": adoproject,
+                   "repositoryName": repository}
+        shown = f"{organisation}/{adoproject}/{repository}"
+    else:
+        if len(parts) != 2:
+            print(f"  ERROR  GitHub needs `repository` as <owner>/<repo>.\n"
+                  f"         Got {block['repository']!r} ({len(parts)} part(s)).")
+            return 1
+        owner, repository = parts
+        details = {"gitProviderType": "GitHub",
+                   "ownerName": owner,
+                   "repositoryName": repository}
+        shown = f"{owner}/{repository}"
+
     print(f"  workspace    {environment.get('workspace')} ({workspace})")
-    print(f"  repository   {owner}/{repository}")
+    print(f"  repository   {shown}")
     print(f"  branch       {branch}")
     print(f"  directory    {directory}")
     print()
@@ -252,9 +287,7 @@ def connect(project: Path, env: str, message: str) -> int:
 
     if current.get("gitConnectionState") == "NotConnected":
         payload = {"gitProviderDetails": {
-            "gitProviderType": block["provider"],
-            "ownerName": owner,
-            "repositoryName": repository,
+            **details,
             "branchName": branch,
             "directoryName": directory}}
 
