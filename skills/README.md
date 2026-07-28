@@ -14,17 +14,29 @@ AzureFabricMCP provides enterprise-grade skills and MCP integrations for:
 
 ## 📦 What's Included
 
-### Skills (60+ markdown guides organized by workload)
+### Skills — 2 written, by design rather than by neglect
 
 ```
 skills/
-├── fabric/              # 15 skills: provisioning, workspace ops, lakehouses
-├── powerbi/             # 12 skills: semantic models, DAX, reports
-├── dataops/             # 10 skills: quality, monitoring, SLA compliance
-├── dbt/                 # 10 skills: modeling, testing, orchestration
-├── github-actions/      # 8 skills: CI/CD, deployment, multi-environment
-└── common/              # Shared utilities & patterns
+├── fabric/              # 1: lakehouse & warehouse topology
+├── powerbi/             # 1: DirectLake binding and TMDL authoring
+├── dataops/             # empty
+├── dbt/                 # empty
+├── github-actions/      # empty
+└── common/              # empty
 ```
+
+This folder previously advertised "60+ guides" across these workloads. Those
+files were never present. The count is corrected rather than left standing,
+because an index that overstates itself stops you looking where the knowledge
+actually is.
+
+**Most of it is in the framework, not here.** The ten stage prompts under
+`framework/prompts/` carry the procedure and the failure modes; the deploy and
+generator scripts carry the platform behaviour. A skill is written only when a
+behaviour cost real debugging time *and* the explanation does not belong in a
+prompt — which is why there are two. Each folder's `SKILLS_INDEX.md` lists what
+exists and points at where the rest actually lives.
 
 ### Plugins & Agents
 
