@@ -72,63 +72,33 @@ checking workspace permissions that were correct the whole time.
 
 ---
 
-## 2c. Key Vault — created, needs one role grant
+## 2c. Secrets — no Key Vault
 
-`techtonic-kv` exists and is the vault the specs already reference
-(`keyvault://techtonic-kv/fabric-sp-secret` and two alerting secrets).
+Secrets are **GitHub repository secrets**, injected as environment variables.
+There is no vault.
 
-| | |
-|---|---|
-| Vault | `techtonic-kv` |
-| URI | `https://techtonic-kv.vault.azure.net/` |
-| Resource group | `rg-fabric-poc-paresh` (centralindia) |
-| Model | RBAC (the tenant forces this on new vaults) |
-| Soft delete | 90 days |
-
-**Nobody can read or write its secrets yet, including you.** Granting access
+A Key Vault (`techtonic-kv`) was created and then removed. Granting access to it
 needs `Microsoft.Authorization/roleAssignments/write` — Owner or User Access
-Administrator on the subscription or resource group. A Contributor can create
-the vault but not grant access to it, and cannot switch it to the access-policy
-model either, because changing the permission model requires the same right.
+Administrator — and this project holds only Contributor. A Contributor can
+create a vault but cannot grant access to it, cannot switch it to the
+access-policy model (changing the permission model needs the same right), and
+the tenant forces RBAC on new vaults regardless. So the vault would have sat in
+the specs unreadable, which reads as configured and is worse than absent.
 
-Your account holds **Contributor** on the subscription and nothing more, so
-this is not something you can grant yourself. `User Access Administrator` on the
-subscription is held by `sagaru@cybage.com` and `vaibhavwa@cybage.com`; several
-others hold `Owner`. Either role is sufficient.
+The specs reference environment variables directly:
 
-Someone with that role needs to run:
+| Reference | Where |
+|---|---|
+| `${AZURE_CLIENT_SECRET}` | `fabric/01-scaffolding.yaml` — service principal |
+| `${TEAMS_WEBHOOK_URL}` | `dataops/01-monitoring.yaml` — alerting |
+| `${PAGERDUTY_ROUTING_KEY}` | `dataops/01-monitoring.yaml` — alerting |
 
-```bash
-SCOPE="/subscriptions/f7776080-7c77-4452-b9ae-caf61f7d582b/resourceGroups/rg-fabric-poc-paresh/providers/Microsoft.KeyVault/vaults/techtonic-kv"
-az role assignment create --assignee-object-id 468e37ae-d46d-48c2-a834-3e32dd4b125a --assignee-principal-type User --role "Key Vault Secrets Officer" --scope "$SCOPE"
-az role assignment create --assignee-object-id 275acfcb-d133-4840-90a4-7545136ecb75 --assignee-principal-type ServicePrincipal --role "Key Vault Secrets User" --scope "$SCOPE"
-```
+`framework/deploy/_secrets.py` resolves these, and still supports
+`keyvault://vault/secret` for a project that does have the access — it checks
+the environment first either way, so CI needs no vault round trip.
 
-Officer for you (read and write), Secrets User for `AzureFabric_MCP` (read
-only) — it never needs to create a secret.
-
-Then store the secret **yourself**; it should not pass through anyone else's
-hands or appear in a transcript:
-
-```bash
-az keyvault secret set --vault-name techtonic-kv --name fabric-sp-secret --value "<the client secret>"
-```
-
-### Is Key Vault required?
-
-**No.** CI resolves secrets from GitHub repository secrets, and
-`framework/deploy/_secrets.py` checks the environment *before* the vault --
-deliberately, so a runner needs no second identity and no network round trip.
-
-Key Vault matters for what CI does not cover: running the deploy scripts
-locally without exporting a secret into your shell, the Teams and PagerDuty
-references in `dataops/01-monitoring.yaml`, and having one place to rotate a
-secret rather than several.
-
-If you would rather not use it at all, delete the three `keyvault://` references
-and export the variables instead. What is not acceptable is leaving the
-references in place unresolvable -- a spec that names a vault nobody can read is
-the kind of decoration this framework exists to remove.
+Running locally needs no secret at all: the deploy scripts fall back to your
+`az login` session.
 
 ---
 

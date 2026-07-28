@@ -509,7 +509,7 @@ alerting:
   channels:
   - name: teams_data_platform
     type: microsoft_teams
-    webhook_ref: keyvault://techtonic-kv/teams-webhook
+    webhook_ref: ${TEAMS_WEBHOOK_URL}
     min_severity: warning
   - name: email_data_eng
     type: email
@@ -518,7 +518,7 @@ alerting:
     min_severity: error
   - name: pagerduty_oncall
     type: pagerduty
-    service_ref: keyvault://techtonic-kv/pagerduty-key
+    service_ref: ${PAGERDUTY_ROUTING_KEY}
     min_severity: critical
   routing:
   - severity: warning

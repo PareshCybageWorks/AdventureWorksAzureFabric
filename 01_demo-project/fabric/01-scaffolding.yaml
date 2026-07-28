@@ -55,7 +55,16 @@ tenant:
 auth:
   mode: service_principal
   client_id: ${FABRIC_CLIENT_ID}
-  client_secret_ref: keyvault://techtonic-kv/fabric-sp-secret
+  # An environment variable, not a vault. CI injects it from a GitHub
+  # repository secret; locally the deploy scripts fall back to `az login` and
+  # need no secret at all.
+  #
+  # A Key Vault was created and then abandoned: granting access to it needs
+  # roleAssignments/write, which nobody on this project holds, and a vault
+  # nobody can read is worse than no vault -- it reads as configured.
+  # framework/deploy/_secrets.py still resolves keyvault:// for projects that
+  # do have that access.
+  client_secret_ref: ${AZURE_CLIENT_SECRET}
 
 # -----------------------------------------------------------------------------
 # Topology -- the one switch that decides workspace and storage layout

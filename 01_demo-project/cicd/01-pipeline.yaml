@@ -371,8 +371,10 @@ rollback:
   rpo_minutes: 60
 
 secrets:
-  store: azure_key_vault
-  vault: techtonic-kv
+  # GitHub repository secrets, injected as environment variables. Key Vault was
+  # prepared and dropped: granting access needs roleAssignments/write and nobody
+  # here holds it, so the vault would have sat in the spec unreadable.
+  store: github_secrets
   # Names only. A literal value here fails check_secrets.
   required:
     - AZURE_CLIENT_ID
