@@ -13,3 +13,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
+
+# Presentation material that is not framework code. Untracking alone does not
+# stick -- a blanket `git add -A` re-adds it, which is how it landed twice.
+/AzureFabricMCP/
