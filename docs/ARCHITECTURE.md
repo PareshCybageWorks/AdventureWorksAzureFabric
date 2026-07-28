@@ -772,7 +772,7 @@ Claude:
 ┌─────────────────────────────────────────┐
 │    Service Principal (App Registration) │
 │    - Client ID                          │
-│    - Client Secret (in Key Vault)       │
+│    - Client Secret (repository secret)  │
 │    - Tenant ID                          │
 └─────────────────────────────────────────┘
           ↓

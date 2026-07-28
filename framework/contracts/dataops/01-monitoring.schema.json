@@ -233,7 +233,7 @@
 
     "alerting": {
       "type": "object",
-      "description": "Where breaches go. Destinations are references (keyvault:// or ${ENV}) -- never literal webhooks or addresses.",
+      "description": "Where breaches go. Destinations are references -- never literal webhooks or addresses. Prefer ${ENV}; keyvault:// is also supported.",
       "properties": {
         "channels": { "type": "array" },
         "routes": { "type": "array" }

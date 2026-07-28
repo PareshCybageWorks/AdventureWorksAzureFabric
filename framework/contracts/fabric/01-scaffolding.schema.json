@@ -129,7 +129,7 @@
         },
         "client_secret_ref": {
           "type": "string",
-          "description": "A REFERENCE to a secret (keyvault://...), never the secret.",
+          "description": "A REFERENCE to a secret, never the secret. Prefer ${ENV_VAR}: it is resolved first and needs no role grant. keyvault://<vault>/<secret> is also supported, but granting access to it needs roleAssignments/write, which a Contributor does not hold.",
           "not": {
             "pattern": "^[A-Za-z0-9+/=]{20,}$"
           }

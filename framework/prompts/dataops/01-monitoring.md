@@ -36,8 +36,8 @@ individual run looks fine.
    for it.
 3. **What should stop a release, per environment?** Blocking dev stops work;
    blocking prod stops the business. They should rarely be the same.
-4. **Who is alerted, and how?** Destinations are references
-   (`keyvault://…` or `${ENV}`), never literal webhooks.
+4. **Who is alerted, and how?** Destinations are references — `${ENV}` by
+   default, `keyvault://…` where that is set up — never literal webhooks.
 
 ---
 

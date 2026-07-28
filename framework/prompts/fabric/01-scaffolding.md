@@ -94,8 +94,16 @@ Do not ask about these. Derive them and state what you chose:
 Emit `fabric/01-scaffolding.yaml` conforming to the contract. Copy
 `framework/templates/fabric/01-scaffolding.yaml` as the starting point.
 
-Secrets are **references**, never values: `keyvault://vault/secret-name` or
-`${ENV_VAR}`. The contract rejects anything that looks like a literal secret.
+Secrets are **references**, never values. The contract rejects anything that
+looks like a literal secret.
+
+Default to `${ENV_VAR}` — it is resolved first and needs nobody's permission:
+CI injects it from repository secrets and a local run reads the shell.
+`keyvault://vault/secret-name` is supported and is the better durable store,
+but granting a principal access to it needs `roleAssignments/write`, which a
+Contributor does not hold and a tenant forcing RBAC gives no way around. Choose
+it once someone has confirmed they can actually grant the role, rather than
+inheriting it and discovering that later.
 
 ## Step 4 — Validate
 

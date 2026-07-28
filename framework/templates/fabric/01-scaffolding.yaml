@@ -34,7 +34,15 @@ tenant:
 auth:
   mode: service_principal
   client_id: ${FABRIC_CLIENT_ID}
-  client_secret_ref: keyvault://<vault>/<secret>   # a REFERENCE, never a value
+  # A REFERENCE, never a value -- a literal here fails check_secrets.
+  #
+  # An environment variable is the default because it is resolved FIRST and
+  # needs nobody's permission: CI injects it from repository secrets, and a
+  # local run picks it up from the shell. Key Vault is supported
+  # (keyvault://<vault>/<secret>) but granting a principal access needs
+  # roleAssignments/write, which a Contributor does not hold -- so it is a
+  # deliberate choice to make later, not a default to inherit.
+  client_secret_ref: ${AZURE_CLIENT_SECRET}
 
 # medallion unless multiple teams own pipelines end to end with independent
 # release cadences. `rationale` is required and length-checked.
