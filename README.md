@@ -44,8 +44,9 @@ AzureFabricMCP/          the framework -- reusable, no project data ever
 └── data/synthetic/      calibrated demo data with a defect manifest
 ```
 
-**Framework is reusable, projects hold design only.** More projects sit
-alongside `01_demo-project/` and share the framework unchanged.
+**Framework is reusable, projects hold design only.** Each project is its own
+repository and pins a framework tag; none of them contain framework code, and
+this repository contains no project data.
 
 Start with [`AzureFabricMCP/framework/INDEX.md`](AzureFabricMCP/framework/INDEX.md)
 — it maps the whole framework in one screen so you can open only what a task
@@ -65,6 +66,7 @@ needs.
 | **P1** Semantic model | TMDL, DirectLake, DAX measures | ✅ |
 | **P2** Reports | PBIR pages and visuals | ✅ |
 | **D1** DataOps | expectations, SLAs, per-environment enforcement | ✅ |
+| **D2** Data audit | row and value flow bronze to gold, reported in Power BI | ✅ |
 | **C1** CI/CD | GitHub Actions workflows and gates | ✅ |
 
 ---
@@ -72,10 +74,10 @@ needs.
 ## Quick start
 
 ```bash
-pip install -r AzureFabricMCP/framework/requirements.txt
+pip install -r ../AzureFabricMCP/framework/requirements.txt
 az login
 
-# validate every spec against its contract (24 checks)
+# validate every spec against its contract (29 checks)
 python ../AzureFabricMCP/framework/generators/validate.py --project .
 
 # generate
@@ -126,11 +128,26 @@ Verified end to end against a real Fabric workspace: revenue reconciles from
 silver to gold exactly, all 17 DAX measures evaluate, and the DQ monitor runs
 across all three layers.
 
-The CI workflows require repository secrets (`AZURE_CLIENT_ID`,
-`AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`) and GitHub Environments per branch
-before they will pass. Manual approval gates are required reviewers on those
-Environments — they cannot be generated from this repository.
+Proven on **one** project. The second will surface assumptions the first never
+tested — most likely in `generate_notebooks.py`, which carries the most
+demo-shaped logic. Worth expecting rather than being surprised by.
 
-## Branches
+A project's CI needs repository secrets (`AZURE_CLIENT_ID`,
+`AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`), GitHub Environments per branch, and
+— while this repository is private — a PAT so the project can check the
+framework out. See `docs/CI-SETUP.md`.
 
-`feature/*` → `dev` → `qa` → `main`, matching the four Fabric workspaces.
+## Versioning
+
+Projects pin a tag. `v0.1.0` is the first: ten stages with contract, prompt and
+template, 29 validation checks, proven end to end on a real Fabric tenant across
+two environments producing identical figures.
+
+Tag a release when a contract changes shape. A project then upgrades by editing
+one line in its `cicd/01-pipeline.yaml` — a reviewable change, rather than a
+build that breaks because something moved in a branch nobody was watching.
+
+## Branching
+
+`feature/*` → `dev` → `qa` → `main` in a PROJECT repository, matching its four
+Fabric workspaces. This repository has no deployment branches; it is a library.
