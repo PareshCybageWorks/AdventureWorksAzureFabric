@@ -1,0 +1,92 @@
+version: 1
+
+# =============================================================================
+# D2 Data Audit -- <project>
+# =============================================================================
+# Copy to <project>/dataops/02-audit.yaml and fill in.
+# Contract: framework/contracts/dataops/02-audit.schema.json
+#
+# D1 asks "is this table healthy". D2 asks "where did the rows go" -- the
+# question nobody can answer at 5pm when a total looks low.
+#
+# Declare a MEASURE wherever one exists. A row count alone hides value moving
+# without rows moving: a corrected subtotal changes the total while every row
+# survives.
+# =============================================================================
+
+metadata:
+  name: <project>
+
+target:
+  # The WAREHOUSE, not a lakehouse. The semantic model reads DirectLake from
+  # there, so an audit written elsewhere cannot be reported beside the numbers
+  # it audits.
+  table: dbo.audit_layer_flow
+  view: bi.vw_layer_audit
+  # append keeps history, so a slow leak shows as a trend rather than only as
+  # today's number. One row per entity per layer per run.
+  write_mode: append
+
+entities:
+  # ---------------------------------------------------------------------------
+  # The value-bearing entity. Name the money column at EVERY layer -- it
+  # usually changes name on the way through, which is exactly why it cannot be
+  # guessed.
+  - name: <fact_entity>
+    description: >-
+      Why this entity is worth auditing.
+    layers:
+      bronze:
+        table: bronze_<source>_<entity>
+        measure: <raw_money_column>
+      silver:
+        table: stg_<entity>
+        measure: <cleansed_money_column>
+        quarantine: stg_<entity>_quarantine
+      gold:
+        table: dbo.fct_<entity>
+        measure: <gold_money_column>
+
+  # ---------------------------------------------------------------------------
+  # An entity may legitimately END at silver. A header table consumed into a
+  # fact never appears in gold; declare only the layers it has.
+  - name: <header_entity>
+    layers:
+      bronze:
+        table: bronze_<source>_<entity>
+        measure: <total_column>
+      silver:
+        table: stg_<entity>
+        measure: <total_column>
+        quarantine: stg_<entity>_quarantine
+
+  # ---------------------------------------------------------------------------
+  # SCD2 dimension. grain_changes is REQUIRED here: gold holds one row per
+  # VERSION, so it legitimately exceeds silver, and without the flag the audit
+  # reports a correct build as a fault. A check that cries wolf gets ignored.
+  - name: <dimension_entity>
+    grain_changes: true
+    layers:
+      bronze:
+        table: bronze_<source>_<entity>
+      silver:
+        table: stg_<entity>
+        quarantine: stg_<entity>_quarantine
+      gold:
+        table: dbo.dim_<entity>
+        # The comparable slice of an SCD2 dimension.
+        filter: is_current = true
+
+# -----------------------------------------------------------------------------
+# Reporting this in Power BI -- read prompts/dataops/02-audit.md first.
+#
+# Three traps, all of which produce plausible numbers rather than errors:
+#   1. the table APPENDS, so measures must scope to the newest run
+#   2. a CARD has no axis, so [Rows] and [Retention %] sum every layer together
+#      -- retention read 2.7% that way
+#   3. retention must compare LIKE FOR LIKE, only entities that reach gold --
+#      dividing by all of bronze read 71% when the answer was 95%
+#
+# Relate the audit table to NOTHING. It describes the pipeline, not the
+# business.
+# -----------------------------------------------------------------------------

@@ -9,6 +9,34 @@ No project data ever lives here.
 
 ---
 
+## Starting a new project
+
+```bash
+python framework/tools/new_project.py --name 02_your-project
+```
+
+Creates the folders, copies all ten stage templates, and writes a README with
+the order to fill them in. **Validation fails immediately on a fresh project --
+that is intended.** The templates carry `<placeholder>` values, and a validator
+that passed on an unfilled template would be worthless on a filled one.
+
+Fill the specs in dependency order; each reads names and types from the ones
+above it:
+
+```
+F1 scaffolding -> F2 sources -> F3 bronze -> F4 silver -> F5 gold
+                                     |
+                        P1 model -> P2 reports
+                        D1 monitoring, D2 audit
+                        C1 ci/cd  (needs F1 environments)
+```
+
+Read `prompts/<track>/<stage>.md` before writing each spec. The prompts carry
+the failure modes, not just the field list -- which is the part that saves time.
+
+Re-run `validate.py` after each stage rather than at the end. It is the cheapest
+gate here and catches the most.
+
 ## Layout
 
 ```

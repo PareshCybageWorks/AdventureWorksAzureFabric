@@ -1,33 +1,24 @@
-# DBT Skills Index
+# dbt Skills Index
 
-Complete DBT (Data Build Tool) skill collection for data transformation, testing, and orchestration.
+Deep knowledge for dbt-based transformation, if a project chooses it, read on demand. The stage prompts under
+`framework/prompts/` are the procedure; skills explain the platform
+behaviour behind the rules those prompts enforce.
 
-## 10 Skills Included
+## Available
 
-### Fundamentals (3 skills)
-- `dbt-fundamentals.md` — Project setup, models, basic configuration
-- `source-freshness.md` — Source monitoring, SLA checks, alerting
-- `testing-framework.md` — Data testing, quality assertions, test automation
+**Nothing yet.** This folder is empty.
 
-### Advanced Development (3 skills)
-- `dbt-docs.md` — Auto-generated documentation, data catalog, lineage
-- `slim-ci.md` — State-based CI, selective testing, performance optimization
-- `snapshots.md` — Slowly Changing Dimensions (SCD Type 2), historical tracking
+An earlier version of this index advertised a "complete skill
+collection" of eight to ten production-ready skills. None of those files
+ever existed. The claim is removed rather than left for someone to find
+by trying to open one -- an index that overstates itself is worse than an
+empty folder, because it stops you looking elsewhere.
 
-### Deployment & Integration (4 skills)
-- `dbt-cloud.md` — Cloud orchestration, scheduling, job management
-- `fabric-integration.md` — Fabric + DBT workflows, medallion architecture
-- `seeds-management.md` — Seed data, reference tables, configuration
-- `performance-optimization.md` — Query optimization, dbt run times, efficiency
+## Worth writing, when one is earned
 
-## 🎯 Quick Start Sequence
+- This framework does not use dbt. Silver transformation is PySpark via ttfabric.cleansing, and gold is PySpark plus the warehouse connector.
+- Kept as a folder because a future project may adopt dbt for the silver layer, at which point F4 would need a second generator.
 
-1. Start: `dbt-fundamentals.md`
-2. Test: `testing-framework.md`
-3. Deploy: `dbt-cloud.md`
-4. Integrate: `fabric-integration.md`
-5. Optimize: `performance-optimization.md`
-
-## 📊 Skills Status
-
-All 10 skills are ✅ **Production Ready** with 180+ code examples and 3,000+ lines.
+Write a skill when a platform behaviour has cost real debugging time and
+the explanation does not belong in a prompt. The two that exist
+(`skills/fabric/`, `skills/powerbi/`) were written that way.

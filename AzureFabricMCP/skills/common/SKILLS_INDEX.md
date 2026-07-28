@@ -1,6 +1,6 @@
-# Data Ops Skills Index
+# Common Skills Index
 
-Deep knowledge for quality thresholds, monitoring and SLA enforcement, read on demand. The stage prompts under
+Deep knowledge for cross-cutting platform knowledge, read on demand. The stage prompts under
 `framework/prompts/` are the procedure; skills explain the platform
 behaviour behind the rules those prompts enforce.
 
@@ -16,9 +16,8 @@ empty folder, because it stops you looking elsewhere.
 
 ## Worth writing, when one is earned
 
-- Calibrating a threshold from a real defect rate rather than a guess
-- Reading a Fabric notebook failure that only reports "session failed"
-- Alert routing and breach tolerance without alert fatigue
+- YAML 1.1 hazards: bare on/off/yes/no keys become booleans, and an unquoted comma in flow style truncates the value
+- Retry and throttling across the Fabric and OneLake APIs
 
 Write a skill when a platform behaviour has cost real debugging time and
 the explanation does not belong in a prompt. The two that exist

@@ -1,31 +1,25 @@
 # GitHub Actions Skills Index
 
-Complete GitHub Actions skill collection for CI/CD automation and multi-environment deployment.
+Deep knowledge for CI/CD for Fabric deployment, read on demand. The stage prompts under
+`framework/prompts/` are the procedure; skills explain the platform
+behaviour behind the rules those prompts enforce.
 
-## 8 Skills Included
+## Available
 
-### Foundations (2 skills)
-- `ci-cd-setup.md` — Workflow basics, triggers, jobs, actions
-- `testing-automation.md` — Automated testing, validation, quality gates
+**Nothing yet.** This folder is empty.
 
-### Deployment (3 skills)
-- `fabric-deployment.md` — Deploy Fabric items, notebooks, datasets
-- `powerbi-deployment.md` — Publish Power BI models and reports
-- `multi-environment.md` — Dev → QA → UAT → Production promotion
+An earlier version of this index advertised a "complete skill
+collection" of eight to ten production-ready skills. None of those files
+ever existed. The claim is removed rather than left for someone to find
+by trying to open one -- an index that overstates itself is worse than an
+empty folder, because it stops you looking elsewhere.
 
-### Operations & Advanced (3 skills)
-- `secrets-management.md` — Secure credential handling, Azure Key Vault
-- `deployment-gates.md` — Approval workflows, manual gates, reviews
-- `notification-integration.md` — Slack, Teams, webhooks, status updates
+## Worth writing, when one is earned
 
-## 🎯 Quick Start Sequence
+- Why a deploy job needs a GitHub Environment (approval gates and scoped secrets live there, not in the workflow)
+- Gating deploys on a repository variable so an unconfigured repo skips rather than fails
+- Running a CI job locally before it runs publicly on someone's pull request
 
-1. Start: `ci-cd-setup.md`
-2. Test: `testing-automation.md`
-3. Deploy: `fabric-deployment.md` + `powerbi-deployment.md`
-4. Scale: `multi-environment.md`
-5. Secure: `secrets-management.md` + `deployment-gates.md`
-
-## 📊 Skills Status
-
-All 8 skills are ✅ **Production Ready** with 120+ code examples and 2,000+ lines.
+Write a skill when a platform behaviour has cost real debugging time and
+the explanation does not belong in a prompt. The two that exist
+(`skills/fabric/`, `skills/powerbi/`) were written that way.
