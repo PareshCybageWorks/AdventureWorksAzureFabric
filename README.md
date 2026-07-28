@@ -10,6 +10,18 @@ scripts push those to Fabric. Nothing in the pipeline is authored by hand twice.
 
 ## Layout
 
+**The framework and projects live in separate repositories.** A project pins a
+framework **tag**, so a framework change cannot break a project's build without
+a commit in that project saying so.
+
+| Repository | Holds |
+|---|---|
+| this one | the framework, tagged `v0.1.0` |
+| [demoproject_azurefabricmcp](https://github.com/PareshCybageWorks/demoproject_azurefabricmcp) | the commerce demo project |
+
+Clone them side by side; every path below resolves the same way locally as it
+does in CI, where the framework is checked out to `AzureFabricMCP/`.
+
 ```
 AzureFabricMCP/          the framework -- reusable, no project data ever
 ├── framework/
@@ -23,7 +35,7 @@ AzureFabricMCP/          the framework -- reusable, no project data ever
 │   └── tests/           runs without Spark or pytest
 └── skills/              deep platform knowledge, read on demand
 
-01_demo-project/         a project -- authored design only
+<project>/               a project, in its own repo -- authored design only
 ├── fabric/              F1-F5
 ├── powerbi/             P1-P2
 ├── dataops/             D1
@@ -64,19 +76,19 @@ pip install -r AzureFabricMCP/framework/requirements.txt
 az login
 
 # validate every spec against its contract (24 checks)
-python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+python ../AzureFabricMCP/framework/generators/validate.py --project .
 
 # generate
-python AzureFabricMCP/framework/generators/generate_notebooks.py --specs 01_demo-project --out 01_demo-project/generated/notebooks
-python AzureFabricMCP/framework/generators/generate_tmdl.py      --specs 01_demo-project --out 01_demo-project/generated/model
+python ../AzureFabricMCP/framework/generators/generate_notebooks.py --specs . --out generated/notebooks
+python ../AzureFabricMCP/framework/generators/generate_tmdl.py      --specs . --out generated/model
 
 # deploy
-python AzureFabricMCP/framework/deploy/push_items.py           --project 01_demo-project --env dev --create-missing
-python AzureFabricMCP/framework/deploy/push_semantic_model.py  --project 01_demo-project --env dev
-python AzureFabricMCP/framework/deploy/push_reports.py         --project 01_demo-project --env dev
+python ../AzureFabricMCP/framework/deploy/push_items.py           --project . --env dev --create-missing
+python ../AzureFabricMCP/framework/deploy/push_semantic_model.py  --project . --env dev
+python ../AzureFabricMCP/framework/deploy/push_reports.py         --project . --env dev
 
 # prove it works -- deploying is not the same as working
-python AzureFabricMCP/framework/tools/query_model.py --project 01_demo-project --smoke
+python ../AzureFabricMCP/framework/tools/query_model.py --project . --smoke
 ```
 
 ---
