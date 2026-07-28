@@ -198,6 +198,15 @@ def workflow_yaml(workflow: dict, spec: dict) -> str:
                     f"          token: ${{{{ secrets.{framework['token_secret']} }}}}")
             lines.append("")
 
+        # requirements.txt lives inside the framework, so its path moves with
+        # the framework. Hardcoding `framework/requirements.txt` worked only
+        # while the two shared a repository, and failed silently on the split:
+        # the checkout succeeds, and the FIRST thing to break is pip, whose
+        # error names a missing file rather than a misplaced checkout.
+        requirements = "framework/requirements.txt"
+        if framework:
+            requirements = f"{framework['path'].rstrip('/')}/framework/requirements.txt"
+
         lines += [
             "      - uses: actions/setup-python@v5",
             "        with:",
@@ -207,7 +216,7 @@ def workflow_yaml(workflow: dict, spec: dict) -> str:
             "      - name: Install dependencies",
             "        run: |",
             "          python -m pip install --upgrade pip",
-            "          pip install -r framework/requirements.txt",
+            f"          pip install -r {requirements}",
             "",
         ]
         for step in job["steps"]:
