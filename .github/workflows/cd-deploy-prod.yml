@@ -46,6 +46,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -57,25 +65,25 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: validate.py
-        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+        run: python AzureFabricMCP/framework/generators/validate.py --project .
 
       - name: provision_storage.py
-        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env prod
+        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env prod
 
       - name: push_library.py
-        run: python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env prod --wait
+        run: python AzureFabricMCP/framework/deploy/push_library.py --project . --env prod --wait
 
       - name: push_items.py
-        run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env prod --create-missing
+        run: python AzureFabricMCP/framework/deploy/push_items.py --project . --env prod --create-missing
 
       - name: run_migrations.py
-        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env prod
+        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env prod
 
       - name: push_semantic_model.py
-        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env prod
+        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env prod
 
       - name: push_reports.py
-        run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env prod
+        run: python AzureFabricMCP/framework/deploy/push_reports.py --project . --env prod
 
       - name: organise_items.py
-        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env prod
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project . --env prod

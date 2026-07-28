@@ -387,6 +387,34 @@
           "description": "Why this mechanism suits this project. Required in practice when a deployment_pipeline block is also present, so a reader is not left guessing which one promotes."
         }
       }
+    },
+    "framework": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "path"
+      ],
+      "description": "Where CI obtains the framework, when it lives in a DIFFERENT repository from the project. Omit when both share a repository. The generator emits a second actions/checkout so every `python <path>` step resolves exactly as it does locally.",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+$",
+          "description": "owner/repo of the framework."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Tag, branch or SHA. PIN IT to a tag: tracking a branch means a framework change can break this project's build with no commit here explaining why, which is the invisible coupling a split is supposed to remove."
+        },
+        "path": {
+          "type": "string",
+          "description": "Checkout path, e.g. AzureFabricMCP. Step paths are written relative to it, so keeping the same name as the framework repo folder means nothing else changes."
+        },
+        "token_secret": {
+          "type": "string",
+          "description": "Secret holding a PAT with read access, required while the framework repo is private. Omit if public."
+        }
+      }
     }
   }
 }

@@ -37,6 +37,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -48,28 +56,28 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: validate.py
-        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+        run: python AzureFabricMCP/framework/generators/validate.py --project .
 
       - name: provision_storage.py
-        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env uat
+        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env uat
 
       - name: push_library.py
-        run: python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env uat --wait
+        run: python AzureFabricMCP/framework/deploy/push_library.py --project . --env uat --wait
 
       - name: push_items.py
-        run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env uat --create-missing
+        run: python AzureFabricMCP/framework/deploy/push_items.py --project . --env uat --create-missing
 
       - name: run_migrations.py
-        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env uat
+        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env uat
 
       - name: push_semantic_model.py
-        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env uat
+        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env uat
 
       - name: push_reports.py
-        run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env uat
+        run: python AzureFabricMCP/framework/deploy/push_reports.py --project . --env uat
 
       - name: organise_items.py
-        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project . --env uat
 
   dq-gate:
     runs-on: ubuntu-latest
@@ -83,6 +91,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -94,4 +110,4 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: run_monitor.py
-        run: python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env uat
+        run: python AzureFabricMCP/framework/tools/run_monitor.py --project . --env uat

@@ -40,6 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -51,13 +59,21 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: validate.py
-        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+        run: python AzureFabricMCP/framework/generators/validate.py --project .
 
   unit-tests:
     # Verdict logic for the monitoring rules. No Spark, no cluster.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
 
       - uses: actions/setup-python@v5
         with:
@@ -81,6 +97,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -92,28 +116,28 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: notebooks
-        run: python AzureFabricMCP/framework/generators/generate_notebooks.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+        run: python AzureFabricMCP/framework/generators/generate_notebooks.py --specs . --out generated/notebooks --check
 
       - name: pipelines
-        run: python AzureFabricMCP/framework/generators/generate_pipelines.py --specs 01_demo-project --out 01_demo-project/generated/pipelines --check
+        run: python AzureFabricMCP/framework/generators/generate_pipelines.py --specs . --out generated/pipelines --check
 
       - name: migrations
-        run: python AzureFabricMCP/framework/generators/generate_ddl.py --specs 01_demo-project --out 01_demo-project/generated/migrations --check
+        run: python AzureFabricMCP/framework/generators/generate_ddl.py --specs . --out generated/migrations --check
 
       - name: model
-        run: python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 01_demo-project --out 01_demo-project/generated/model --check
+        run: python AzureFabricMCP/framework/generators/generate_tmdl.py --specs . --out generated/model --check
 
       - name: reports
-        run: python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
+        run: python AzureFabricMCP/framework/generators/generate_report.py --specs . --out generated/reports --check
 
       - name: notebooks
-        run: python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+        run: python AzureFabricMCP/framework/generators/generate_monitoring.py --specs . --out generated/notebooks --check
 
       - name: notebooks
-        run: python AzureFabricMCP/framework/generators/generate_audit.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
+        run: python AzureFabricMCP/framework/generators/generate_audit.py --specs . --out generated/notebooks --check
 
       - name: generate_workflows.py
-        run: python AzureFabricMCP/framework/generators/generate_workflows.py --specs 01_demo-project --out . --check
+        run: python AzureFabricMCP/framework/generators/generate_workflows.py --specs . --out . --check
 
       - name: sync_contract_rules.py
         run: python AzureFabricMCP/framework/generators/sync_contract_rules.py --check

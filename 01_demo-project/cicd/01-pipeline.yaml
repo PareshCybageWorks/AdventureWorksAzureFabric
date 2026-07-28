@@ -5,9 +5,9 @@ version: 1
 # =============================================================================
 # Workflows, gates and promotion rules.
 #
-# Paths are relative to the REPOSITORY ROOT, which is the folder holding both
-# AzureFabricMCP/ and 01_demo-project/ -- not the framework folder. Getting this
-# wrong produces workflows that fail on their first CI run.
+# Paths are relative to the REPOSITORY ROOT. The project is at the root of its
+# own repo, so specs are `.`; the framework is checked out by CI to
+# AzureFabricMCP/ -- see the `framework` block below.
 #
 # Every `python <path>` step is resolved against the repository at validation.
 # That check exists because this spec's original steps referenced
@@ -23,6 +23,20 @@ version: 1
 
 metadata:
   name: demo-commerce-analytics
+
+# The framework lives in a SEPARATE repository. CI checks it out to
+# AzureFabricMCP/, which is the same relative path used when both repos sat
+# side by side -- so every step below reads identically either way.
+#
+# `ref` is a TAG, not a branch. Tracking dev would let a framework change break
+# this project's build with no commit here explaining why, which is exactly the
+# invisible coupling that splitting the repos is meant to remove. Moving to a
+# newer framework is then a one-line, reviewable change.
+framework:
+  repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+  ref: v0.1.0
+  path: AzureFabricMCP
+  token_secret: FRAMEWORK_REPO_TOKEN
 
 # Every job that declares an environment is skipped unless the repository
 # variable FABRIC_DEPLOY_ENABLED is set to "true". Merging these workflows
@@ -149,7 +163,7 @@ workflows:
           The checks that genuinely must hold are errors, and no-drift and
           dq-gate still block on their own terms.
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+          - python AzureFabricMCP/framework/generators/validate.py --project .
 
       - id: unit-tests
         description: Verdict logic for the monitoring rules. No Spark, no cluster.
@@ -163,14 +177,14 @@ workflows:
           spec it comes from -- which would otherwise be silently overwritten by
           the next generation.
         steps:
-          - python AzureFabricMCP/framework/generators/generate_notebooks.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
-          - python AzureFabricMCP/framework/generators/generate_pipelines.py --specs 01_demo-project --out 01_demo-project/generated/pipelines --check
-          - python AzureFabricMCP/framework/generators/generate_ddl.py --specs 01_demo-project --out 01_demo-project/generated/migrations --check
-          - python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 01_demo-project --out 01_demo-project/generated/model --check
-          - python AzureFabricMCP/framework/generators/generate_report.py --specs 01_demo-project --out 01_demo-project/generated/reports --check
-          - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
-          - python AzureFabricMCP/framework/generators/generate_audit.py --specs 01_demo-project --out 01_demo-project/generated/notebooks --check
-          - python AzureFabricMCP/framework/generators/generate_workflows.py --specs 01_demo-project --out . --check
+          - python AzureFabricMCP/framework/generators/generate_notebooks.py --specs . --out generated/notebooks --check
+          - python AzureFabricMCP/framework/generators/generate_pipelines.py --specs . --out generated/pipelines --check
+          - python AzureFabricMCP/framework/generators/generate_ddl.py --specs . --out generated/migrations --check
+          - python AzureFabricMCP/framework/generators/generate_tmdl.py --specs . --out generated/model --check
+          - python AzureFabricMCP/framework/generators/generate_report.py --specs . --out generated/reports --check
+          - python AzureFabricMCP/framework/generators/generate_monitoring.py --specs . --out generated/notebooks --check
+          - python AzureFabricMCP/framework/generators/generate_audit.py --specs . --out generated/notebooks --check
+          - python AzureFabricMCP/framework/generators/generate_workflows.py --specs . --out . --check
           - python AzureFabricMCP/framework/generators/sync_contract_rules.py --check
 
   # ---------------------------------------------------------------------------
@@ -189,14 +203,14 @@ workflows:
           every Power BI item stayed at the workspace root -- and reported
           success, because nothing it knew about was misplaced.
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
-          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env dev
-          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env dev --wait
-          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env dev --create-missing
-          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env dev
-          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env dev
-          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env dev
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env dev
+          - python AzureFabricMCP/framework/generators/validate.py --project .
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env dev
+          - python AzureFabricMCP/framework/deploy/push_library.py --project . --env dev --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project . --env dev --create-missing
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env dev
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env dev
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project . --env dev
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project . --env dev
 
   # ---------------------------------------------------------------------------
   - name: cd-deploy-qa
@@ -211,14 +225,14 @@ workflows:
       - id: deploy
         environment: qa
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
-          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa
-          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
-          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
-          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
-          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env qa
-          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
+          - python AzureFabricMCP/framework/generators/validate.py --project .
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env qa
+          - python AzureFabricMCP/framework/deploy/push_library.py --project . --env qa --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project . --env qa --create-missing
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env qa
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env qa
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project . --env qa
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project . --env qa
 
       - id: dq-gate
         environment: qa
@@ -232,7 +246,7 @@ workflows:
           table, measured what -- because a failed Fabric notebook reports only
           "session failed", and a gate nobody can read is a gate nobody trusts.
         steps:
-          - python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env qa
+          - python AzureFabricMCP/framework/tools/run_monitor.py --project . --env qa
 
       - id: verify
         environment: qa
@@ -241,8 +255,8 @@ workflows:
           The model has to answer, not merely deploy. A DirectLake model with a
           relationship on the wrong column publishes cleanly and returns blank.
         steps:
-          - python AzureFabricMCP/framework/tools/query_warehouse.py --project 01_demo-project --env qa --smoke
-          - python AzureFabricMCP/framework/tools/query_model.py --project 01_demo-project --env qa --smoke
+          - python AzureFabricMCP/framework/tools/query_warehouse.py --project . --env qa --smoke
+          - python AzureFabricMCP/framework/tools/query_model.py --project . --env qa --smoke
 
   # ---------------------------------------------------------------------------
   - name: cd-deploy-uat
@@ -260,20 +274,20 @@ workflows:
       - id: deploy
         environment: uat
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
-          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env uat
-          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env uat --wait
-          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env uat --create-missing
-          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env uat
-          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env uat
-          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env uat
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/generators/validate.py --project .
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env uat
+          - python AzureFabricMCP/framework/deploy/push_library.py --project . --env uat --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project . --env uat --create-missing
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env uat
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env uat
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project . --env uat
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project . --env uat
 
       - id: dq-gate
         environment: uat
         needs: [deploy]
         steps:
-          - python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env uat
+          - python AzureFabricMCP/framework/tools/run_monitor.py --project . --env uat
 
   # ---------------------------------------------------------------------------
   - name: cd-deploy-prod
@@ -289,14 +303,14 @@ workflows:
       - id: deploy
         environment: prod
         steps:
-          - python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
-          - python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env prod
-          - python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env prod --wait
-          - python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env prod --create-missing
-          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env prod
-          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env prod
-          - python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env prod
-          - python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env prod
+          - python AzureFabricMCP/framework/generators/validate.py --project .
+          - python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env prod
+          - python AzureFabricMCP/framework/deploy/push_library.py --project . --env prod --wait
+          - python AzureFabricMCP/framework/deploy/push_items.py --project . --env prod --create-missing
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env prod
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env prod
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project . --env prod
+          - python AzureFabricMCP/framework/deploy/organise_items.py --project . --env prod
 
   # ---------------------------------------------------------------------------
   - name: ops-monitor
@@ -317,7 +331,7 @@ workflows:
           nobody triggered. Blocking belongs on the deployment path, where
           somebody is waiting for an answer.
         steps:
-          - python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env prod --report-only
+          - python AzureFabricMCP/framework/tools/run_monitor.py --project . --env prod --report-only
 
 gates:
   - id: validate

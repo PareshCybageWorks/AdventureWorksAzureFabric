@@ -49,6 +49,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -60,4 +68,4 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: run_monitor.py
-        run: python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env prod --report-only
+        run: python AzureFabricMCP/framework/tools/run_monitor.py --project . --env prod --report-only

@@ -34,6 +34,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -45,28 +53,28 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: validate.py
-        run: python AzureFabricMCP/framework/generators/validate.py --project 01_demo-project
+        run: python AzureFabricMCP/framework/generators/validate.py --project .
 
       - name: provision_storage.py
-        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project 01_demo-project --env qa
+        run: python AzureFabricMCP/framework/deploy/provision_storage.py --project . --env qa
 
       - name: push_library.py
-        run: python AzureFabricMCP/framework/deploy/push_library.py --project 01_demo-project --env qa --wait
+        run: python AzureFabricMCP/framework/deploy/push_library.py --project . --env qa --wait
 
       - name: push_items.py
-        run: python AzureFabricMCP/framework/deploy/push_items.py --project 01_demo-project --env qa --create-missing
+        run: python AzureFabricMCP/framework/deploy/push_items.py --project . --env qa --create-missing
 
       - name: run_migrations.py
-        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project 01_demo-project --env qa
+        run: python AzureFabricMCP/framework/deploy/run_migrations.py --project . --env qa
 
       - name: push_semantic_model.py
-        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 01_demo-project --env qa
+        run: python AzureFabricMCP/framework/deploy/push_semantic_model.py --project . --env qa
 
       - name: push_reports.py
-        run: python AzureFabricMCP/framework/deploy/push_reports.py --project 01_demo-project --env qa
+        run: python AzureFabricMCP/framework/deploy/push_reports.py --project . --env qa
 
       - name: organise_items.py
-        run: python AzureFabricMCP/framework/deploy/organise_items.py --project 01_demo-project --env qa
+        run: python AzureFabricMCP/framework/deploy/organise_items.py --project . --env qa
 
   dq-gate:
     # Runs the DQ monitor in qa and fails on any breach at a severity qa blocks
@@ -86,6 +94,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -97,7 +113,7 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: run_monitor.py
-        run: python AzureFabricMCP/framework/tools/run_monitor.py --project 01_demo-project --env qa
+        run: python AzureFabricMCP/framework/tools/run_monitor.py --project . --env qa
 
   verify:
     # The model has to answer, not merely deploy. A DirectLake model with a
@@ -113,6 +129,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check out the framework (v0.1.0)
+        uses: actions/checkout@v4
+        with:
+          repository: PareshCybageWorks/Azure_DataBIIntegration_MCP
+          ref: v0.1.0
+          path: AzureFabricMCP
+          token: ${{ secrets.FRAMEWORK_REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: 3.12
@@ -124,7 +148,7 @@ jobs:
           pip install -r framework/requirements.txt
 
       - name: query_warehouse.py
-        run: python AzureFabricMCP/framework/tools/query_warehouse.py --project 01_demo-project --env qa --smoke
+        run: python AzureFabricMCP/framework/tools/query_warehouse.py --project . --env qa --smoke
 
       - name: query_model.py
-        run: python AzureFabricMCP/framework/tools/query_model.py --project 01_demo-project --env qa --smoke
+        run: python AzureFabricMCP/framework/tools/query_model.py --project . --env qa --smoke

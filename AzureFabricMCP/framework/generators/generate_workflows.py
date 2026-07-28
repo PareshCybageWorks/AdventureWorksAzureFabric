@@ -177,6 +177,28 @@ def workflow_yaml(workflow: dict, spec: dict) -> str:
         lines += [
             "      - uses: actions/checkout@v4",
             "",
+        ]
+
+        # The framework lives in another repository, so CI must fetch it before
+        # any step can run. Checked out to the SAME relative path the steps
+        # already use, so nothing about them changes.
+        framework = spec.get("framework")
+        if framework:
+            lines += [
+                f"      - name: Check out the framework ({framework.get('ref', 'default')})",
+                "        uses: actions/checkout@v4",
+                "        with:",
+                f"          repository: {quote(framework['repository'])}",
+            ]
+            if framework.get("ref"):
+                lines.append(f"          ref: {quote(framework['ref'])}")
+            lines.append(f"          path: {quote(framework['path'])}")
+            if framework.get("token_secret"):
+                lines.append(
+                    f"          token: ${{{{ secrets.{framework['token_secret']} }}}}")
+            lines.append("")
+
+        lines += [
             "      - uses: actions/setup-python@v5",
             "        with:",
             f"          python-version: {quote(PYTHON_VERSION)}",
