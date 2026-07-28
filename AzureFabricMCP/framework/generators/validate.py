@@ -695,6 +695,65 @@ def check_cascade_quarantine(specs: dict, report: Report) -> None:
         report.ok(f"cascade: {len(cascades)} parent/child rejection rule(s) resolve")
 
 
+def check_git_integration(specs: dict, report: Report) -> None:
+    """Workspace git mirroring cannot overwrite specs or generated output.
+
+    Fabric owns everything beneath its sync directory: it rewrites that subtree
+    to match the workspace. Pointed at `generated/`, an item edited in the UI
+    would land on top of a generated artefact -- and the no-drift gate would
+    then fail on a file nobody edited, which is a genuinely hard morning.
+
+    The mirror is also one-directional on purpose. Syncing git -> workspace
+    would compete with push_items.py over the same items, and both report
+    success, so the loser is silent.
+    """
+    scaffolding = specs.get("fabric/01-scaffolding", {}).get("doc")
+    if not scaffolding:
+        return
+
+    block = scaffolding.get("git_integration")
+    if not block:
+        return
+
+    errors: list[str] = []
+    directory = block.get("directory", "")
+    reserved = ("/generated", "/fabric", "/powerbi", "/dataops", "/cicd", "/data")
+    if any(directory == r or directory.startswith(r + "/") for r in reserved):
+        errors.append(
+            f"directory {directory!r} overlaps spec or generated output. Fabric "
+            f"rewrites everything beneath it, so a UI edit would overwrite a "
+            f"generated artefact and no-drift would fail on a file nobody touched")
+
+    # GitHub cannot authenticate as the caller, so without a connection the
+    # connect call fails -- but only once someone runs it against a tenant that
+    # has the feature enabled, which is the slowest possible way to find out.
+    if block.get("provider") == "GitHub" and not block.get("connection_id"):
+        errors.append(
+            "provider is GitHub but no connection_id is declared. GitHub needs a "
+            "Fabric connection holding a PAT; only Azure DevOps can authenticate "
+            "as the calling user")
+
+    declared = {e["name"] for e in scaffolding.get("environments") or []}
+    for name in block.get("environments") or []:
+        if name not in declared:
+            errors.append(f"environments lists {name!r}, which is not an environment "
+                          f"in this spec")
+            continue
+        environment = next(e for e in scaffolding["environments"] if e["name"] == name)
+        if not environment.get("branch"):
+            errors.append(f"{name} is mirrored but declares no branch, and the "
+                          f"branch is read from the environment rather than restated")
+        if environment.get("is_production"):
+            report.warn("git-integration",
+                        f"{name} is production. Mirroring it is only useful if items "
+                        f"are edited there by hand, which is a larger problem")
+
+    for error in errors:
+        report.error("git-integration", error)
+    if not errors:
+        report.ok("git-integration")
+
+
 def check_promotion_path(specs: dict, report: Report) -> None:
     """Every declared environment can actually be deployed to.
 
@@ -1269,6 +1328,7 @@ SEMANTIC_CHECKS = (
     check_view_dialect,
     check_discarded_rows,
     check_cascade_quarantine,
+    check_git_integration,
     check_promotion_path,
     check_promotion,
     check_rule_coverage,

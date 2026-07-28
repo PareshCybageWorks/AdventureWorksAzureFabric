@@ -113,6 +113,31 @@ storage:
     write_mode: warehouse_connector    # OVERWRITE ONLY; append is unsupported
     staging_path: "Files/staging/gold/{table}"
 
+# OPTIONAL. Mirror deployed items into the repo as readable text, so the
+# deployed state can be diffed across dates rather than recalled. It is an
+# audit mirror, NOT a deployment path -- items reach a workspace only via
+# specs -> generated/ -> push_items.py, and this commits outward.
+#
+# Delete this block if you do not want it. Two one-time prerequisites that no
+# script can perform for you:
+#   - a tenant admin enables GitHub sync (Admin portal > Tenant settings)
+#   - a Fabric connection holds a GitHub PAT with `repo` scope; only its id
+#     goes in the spec, never the token. Azure DevOps needs neither.
+#
+# `branch` is absent on purpose -- read from environments[].branch above.
+# git_integration:
+#   provider: GitHub                        # or AzureDevOps
+#   repository: <owner>/<repo>
+#   directory: /AzureFabricCode             # must NOT overlap generated/ or a
+#                                           # spec folder: Fabric rewrites the
+#                                           # whole subtree beneath it
+#   connection_id: ${FABRIC_GITHUB_CONNECTION_ID}
+#   environments: [dev]                     # promoted envs receive the same
+#                                           # artefacts; mirroring them repeats
+#                                           # the record under another branch
+#   direction: workspace_to_git             # the only value; inward sync would
+#                                           # race push_items.py, silently
+
 workspace_folders:
   - name: "0_config"
     layer: null

@@ -107,6 +107,7 @@ python framework/deploy/push_library.py      --project <p> --env dev --wait
 python framework/deploy/push_files.py        --project <p> --env dev
 python framework/deploy/push_items.py        --project <p> --env dev [--create-missing]
 python framework/deploy/organise_items.py    --project <p> --env dev
+python framework/deploy/connect_git.py       --project <p> --env dev   # optional mirror
 
 # test (no Spark, no pytest)
 python framework/tests/test_monitoring.py

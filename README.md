@@ -77,7 +77,7 @@ needs.
 pip install -r ../AzureFabricMCP/framework/requirements.txt
 az login
 
-# validate every spec against its contract (29 checks)
+# validate every spec against its contract (30 checks)
 python ../AzureFabricMCP/framework/generators/validate.py --project .
 
 # generate
@@ -140,7 +140,7 @@ framework out. See `docs/CI-SETUP.md`.
 ## Versioning
 
 Projects pin a tag. `v0.1.0` is the first: ten stages with contract, prompt and
-template, 29 validation checks, proven end to end on a real Fabric tenant across
+template, 30 validation checks, proven end to end on a real Fabric tenant across
 two environments producing identical figures.
 
 Tag a release when a contract changes shape. A project then upgrades by editing

@@ -497,6 +497,54 @@
         }
       }
     },
+    "git_integration": {
+      "type": "object",
+      "description": "Mirror workspace items into the project repository, so what is deployed can be read and diffed as text. This is an AUDIT MIRROR, not a deployment path: specs -> generated/ -> push_items.py remains the only way items reach a workspace. Branch is NOT declared here -- it is read from environments[].branch, so the branch/workspace mapping exists in exactly one place.",
+      "required": [
+        "provider",
+        "repository",
+        "directory"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "GitHub",
+            "AzureDevOps"
+          ],
+          "description": "GitHub requires a Fabric connection holding a PAT (see connection_id) and a tenant admin setting. Azure DevOps can authenticate as the calling user with no connection."
+        },
+        "repository": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$",
+          "description": "owner/repo, e.g. PareshCybageWorks/demoproject_azurefabricmcp."
+        },
+        "directory": {
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9._/-]*$",
+          "description": "Absolute path within the repo that Fabric owns, e.g. /AzureFabricCode. It must NOT overlap generated/ or any spec folder: Fabric rewrites everything beneath it, and an overlap would let a UI edit silently overwrite a generated artefact."
+        },
+        "connection_id": {
+          "type": "string",
+          "description": "Fabric connection id for the GitHub PAT. A GUID, not a secret -- the token lives inside the connection and never in this spec. Supports ${ENV_VAR}."
+        },
+        "environments": {
+          "type": "array",
+          "description": "Which environments sync. Each connects to its own environments[].branch. Defaults to dev only: mirroring an environment nobody edits by hand adds noise, and prod least of all.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "workspace_to_git"
+          ],
+          "description": "One value on purpose. Syncing git -> workspace would compete with push_items.py for the same items, and the loser is whichever ran first. The framework commits outward and never updates inward."
+        }
+      }
+    },
     "workspace_folders": {
       "type": "array",
       "description": "Fabric workspace folders organise ITEMS; OneLake paths organise FILES inside a lakehouse. Conflating them is the usual source of confusion. Applied by deploy/organise_items.py -- item creation cannot set a folder.",

@@ -120,6 +120,42 @@ every time.
 
 ---
 
+## Step 6 — Git mirroring (optional)
+
+Mirrors deployed items into the repo as text, so "what changed between Tuesday
+and Friday" is a commit range instead of somebody's memory.
+
+```bash
+python framework/deploy/connect_git.py --project <project> --env dev --status
+python framework/deploy/connect_git.py --project <project> --env dev
+```
+
+**It is a mirror, not a deployment path.** Items reach a workspace one way:
+`specs → generated/ → push_items.py`. The sync only commits outward, and
+`direction` has exactly one legal value for that reason — an inward sync would
+compete with `push_items.py` over the same items, and both report success, so
+whichever lost would do so silently.
+
+State the consequence to the user rather than leaving it implied: an item
+edited in the Fabric UI gets committed here and then sits in the repository
+looking authoritative while disagreeing with the spec that generated it.
+`no-drift` compares specs against `generated/` and cannot see it.
+
+Two prerequisites no script can satisfy:
+
+- a **tenant admin** enables *Admin portal → Tenant settings → Users can
+  synchronize workspace items with their GitHub repositories*. Until then every
+  call returns `FeatureNotAvailable`, whatever the spec says.
+- a **Fabric connection** holds a GitHub PAT with `repo` scope. Only its id
+  belongs in the spec. Azure DevOps needs neither — it authenticates as the
+  calling user, which is worth knowing before choosing a provider.
+
+Mirror `dev` only unless there is a reason not to. Promoted environments
+receive the same artefacts, so mirroring them records the same thing again
+under another branch.
+
+---
+
 ## Exit gate
 
 Stage F1 is done when **all** hold:
