@@ -91,6 +91,11 @@ Administrator on the subscription or resource group. A Contributor can create
 the vault but not grant access to it, and cannot switch it to the access-policy
 model either, because changing the permission model requires the same right.
 
+Your account holds **Contributor** on the subscription and nothing more, so
+this is not something you can grant yourself. `User Access Administrator` on the
+subscription is held by `sagaru@cybage.com` and `vaibhavwa@cybage.com`; several
+others hold `Owner`. Either role is sufficient.
+
 Someone with that role needs to run:
 
 ```bash
