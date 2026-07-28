@@ -17,3 +17,6 @@ dist/
 # Presentation material that is not framework code. Untracking alone does not
 # stick -- a blanket `git add -A` re-adds it, which is how it landed twice.
 /AzureFabricMCP/
+
+# Projects live in their own repositories; the framework holds no project data.
+/02_demo-servicenow/

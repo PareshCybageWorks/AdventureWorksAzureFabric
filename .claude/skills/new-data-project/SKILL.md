@@ -35,11 +35,22 @@ Copies every template in and creates the folder structure. It deliberately does
 not fill anything in — a scaffolded project fails validation immediately,
 which is the correct starting state.
 
+## Ask for the BRIEF, not for answers
+
+**The first thing you ask for is the project brief** — a paste, bullets, a
+document, a link. Rough is fine. Read it, then produce questions aimed only at
+what it leaves open, in the brief's own vocabulary.
+
+Do **not** open with a prepared question set. It railroads the design down
+whatever path the options imply, and spends the user's patience asking what the
+brief already answered.
+
 ## Then run the interview
 
 **Read `framework/prompts/00-interview.md` and follow it.** It carries how to
-ask, what to derive rather than ask, what to refuse to guess, and the failure
-modes that make interviews produce plausible-but-wrong specs.
+ask, the no-brief fallback, what to derive rather than ask, what to refuse to
+guess, and the failure modes that make interviews produce plausible-but-wrong
+specs.
 
 Per stage, its own prompt at `framework/prompts/<track>/<stage>.md` holds the
 questions and the exit gate. Read them one stage at a time — all ten at once is

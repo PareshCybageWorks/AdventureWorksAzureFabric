@@ -65,24 +65,48 @@ and move on. Do not re-ask.
 
 ---
 
-## What to ask first
+## Phase 0 — ask for the brief, then derive the questions
 
-Before any stage, get the frame. Five questions, one round:
+**The first thing you ask for is the project brief.** Not a question set — the
+brief. A paste, bullets, a document, a link; rough is fine.
+
+Then read it and produce questions aimed only at what it leaves open, using the
+brief's own vocabulary.
+
+Opening with a prepared question set is the mistake to avoid. It railroads the
+design down whatever path the options imply, and it spends the user's patience
+asking things the brief already answered — which teaches them that answering
+carefully does not pay.
+
+### What the brief usually settles
+
+Read for these before asking anything:
+
+- what decision this enables that nobody can make today
+- which source systems, and who owns each
+- who reads the output, and in what
+- how fresh it must be
+- what is already known to be wrong with the data
+
+### The fallback
+
+Where the brief is silent, ask — three to five at a time, each with a
+recommendation. If there is no brief at all, these five *become* the opening
+round, in this order:
 
 1. **What decision does this let someone make that they cannot make today?**
-   If there is no answer, the project has no consumer and everything after is
-   guesswork.
+   No answer means no consumer, and everything after is guesswork.
 2. **Which source systems, and who owns each?** Ownership matters as much as
-   the name — it determines who you ask when the data is wrong.
-3. **Who reads the output, and in what?** Power BI, an app, a downstream feed.
-   This decides whether P1 and P2 are even in scope.
+   the name — it decides who you ask when the data is wrong.
+3. **Who reads the output, and in what?** This decides whether P1 and P2 are
+   in scope at all.
 4. **How fresh must it be?** Daily is a different pipeline from every fifteen
    minutes, and the difference lands in F3 and D1.
-5. **What is already known to be wrong with the data?** Ask early. Everyone has
-   an answer, it is never in a document, and F2 has a field for it.
+5. **What is already known to be wrong with the data?** Everyone has an answer,
+   it is never written down, and F2 has a field for it.
 
-Record the answers where they will be read: the project README, then the
-relevant spec fields as you reach them.
+Record what you learn where it will be read: the project README first, then the
+spec fields as you reach them. A brief that stays in the chat is lost by F3.
 
 ---
 
