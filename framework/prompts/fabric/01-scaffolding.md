@@ -176,6 +176,22 @@ Mirror `dev` only unless there is a reason not to. Promoted environments
 receive the same artefacts, so mirroring them records the same thing again
 under another branch.
 
+**The `directory` must already exist on that branch.** Fabric *resolves* it as
+a resource rather than creating it, and a missing directory returns
+`GitProviderResourceNotFound` — an error that names neither the directory nor
+the branch, so it reads like a wrong repository name. Create it first; a README
+or `.gitkeep` is enough.
+
+Connecting with `directory: /` succeeds, which is the trap: it hands Fabric the
+whole repository root, and the first sync writes every item beside whatever was
+already there. Never use it to get past the error above.
+
+Expect **fewer items in git than in the workspace**. SQL endpoints are
+auto-created children of a lakehouse or warehouse and are not independently
+syncable — a workspace of 28 items mirrors as 26. That is correct, not a
+partial sync. Fabric preserves workspace folders, so the mirror comes out
+organised the way `organise_items.py` left it.
+
 ---
 
 ## Exit gate

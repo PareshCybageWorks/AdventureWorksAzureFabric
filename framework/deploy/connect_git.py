@@ -84,6 +84,16 @@ def explain(response: requests.Response) -> str:
                 f"         A tenant admin must enable Admin portal > Tenant settings >\n"
                 f"         'Users can synchronize workspace items with their GitHub\n"
                 f"         repositories'. Nothing in this project can work around it.")
+    if code == "GitProviderResourceNotFound":
+        return (f"{message}\n"
+                f"         Fabric RESOLVES the sync directory as an existing resource --\n"
+                f"         it does not create it. The usual cause is that `directory`\n"
+                f"         does not exist yet on that branch. Create it (a README or\n"
+                f"         .gitkeep is enough) and retry.\n"
+                f"         The organisation, project, repository and branch must also\n"
+                f"         all exist and be spelled exactly as the provider stores them.\n"
+                f"         Connecting with directory '/' would succeed and hand Fabric\n"
+                f"         the whole repository root -- do not use it as a workaround.")
     if code in ("InvalidCredentials", "GitCredentialsConfigurationFailed",
                 "UnauthorizedGitProviderAccess"):
         return (f"{message}\n"
