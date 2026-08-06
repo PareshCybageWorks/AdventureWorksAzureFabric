@@ -232,6 +232,11 @@
           "reason": {
             "type": "string",
             "description": "Recorded against each quarantined row. State the CAUSE ('parent order failed cleansing'), not the symptom ('no matching order_id')."
+          },
+          "handles": {
+            "type": "string",
+            "pattern": "^[A-Z]+-[0-9]{3}$",
+            "description": "The known_issues id from 02-sources this cascade deals with, if any.\n\nSome defects can ONLY be handled here. A polymorphic foreign key -- one column pointing at several parent tables depending on the row -- cannot be checked by enforce_referential_integrity against any single parent without quarantining every row belonging to the others. The cascade removes exactly the rows whose real parent was rejected, which is the actual defect.\n\nWithout this field such a defect looks unhandled to check_rule_coverage, and the only ways to satisfy it are to mislabel the defect or to add a rule that discards good rows."
           }
         }
       }

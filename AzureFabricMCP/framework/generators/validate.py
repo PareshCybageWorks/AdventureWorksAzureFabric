@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -296,8 +297,24 @@ def check_secrets(specs: dict, report: Report) -> None:
             for index, value in enumerate(node):
                 walk(value, f"{path}[{index}]")
         elif isinstance(node, str):
-            lowered = path.lower()
-            if any(w in lowered for w in ("secret", "password", "key", "token")):
+            # Match on the LEAF key only, not the whole path.
+            #
+            # Matching the path meant any value nested anywhere beneath a key
+            # whose name contains "key" was tested as a credential -- and
+            # `foreign_keys` contains "key". A foreign key reference longer
+            # than 24 characters was therefore reported as a literal secret,
+            # while a shorter one passed, so the check fired on entity-name
+            # length rather than on anything about the value.
+            leaf = path.rsplit(".", 1)[-1].split("[", 1)[0].lower()
+
+            # Structural fields that merely CONTAIN a keyword. These hold
+            # column names, never credentials.
+            if leaf in ("primary_key", "foreign_keys", "references",
+                        "references_columns", "watermark_column",
+                        "surrogate_key", "business_key", "natural_key"):
+                return
+
+            if any(w in leaf for w in ("secret", "password", "key", "token")):
                 # A reference or an env placeholder is exactly what we want.
                 if node.startswith(("keyvault://", "${", "env:")) or node.endswith("_ref"):
                     return
@@ -523,6 +540,18 @@ def check_rule_coverage(specs: dict, report: Report) -> None:
         for rule in table.get("rules", [])
         if rule.get("handles")
     }
+    # A cascade can be the ONLY place a defect is handled. A polymorphic
+    # foreign key cannot be checked by enforce_referential_integrity against
+    # any single parent without quarantining every row belonging to the
+    # others, so the post-pass -- which removes exactly the rows whose real
+    # parent was rejected -- is the handler. Counting only table rules here
+    # reported those defects as unhandled and pushed the author towards
+    # mislabelling them.
+    handled |= {
+        cascade["handles"]
+        for cascade in silver.get("cascade_quarantine", [])
+        if cascade.get("handles")
+    }
 
     unhandled = sorted(documented - handled)
     phantom = sorted(handled - documented)
@@ -533,6 +562,54 @@ def check_rule_coverage(specs: dict, report: Report) -> None:
         report.warn("coverage", f"rules handling undocumented defect ids: {phantom}")
     if not unhandled and not phantom:
         report.ok(f"coverage: all {len(documented)} documented defects are handled")
+
+
+def check_dimension_business_keys(specs: dict, report: Report) -> None:
+    """A dimension's business_key survives its own projection.
+
+    The generated gold notebook projects source -> target BEFORE calling
+    assign_surrogate_key, so a business_key naming a SOURCE column that the
+    projection renames refers to a column that no longer exists.
+
+    This is the "four names" trap from the F5 prompt, landing in the spec
+    rather than in a join: the fact's lookup column, the dimension's business
+    key, its surrogate key and the column written on the fact are four separate
+    names that only coincide in the easy case.
+
+    It fails at run time inside Spark, which Fabric surfaces only as "session
+    failed" -- five dimensions failed that way here, while the one dimension
+    whose key was not renamed succeeded, making it look like a data problem
+    rather than a naming one.
+    """
+    gold = specs.get("fabric/05-gold", {}).get("doc")
+    if not gold:
+        return
+
+    problems = []
+    for dim in gold.get("dimensions", []):
+        columns = dim.get("columns") or []
+        renames = {c["source"]: c["target"] for c in columns
+                   if c.get("source") and c.get("target")}
+        targets = {c["target"] for c in columns if c.get("target")}
+
+        for key in dim.get("business_key", []):
+            # Not projected at all: passes through untouched, which is fine.
+            if key not in renames and key not in targets:
+                continue
+            if key in targets:
+                continue
+            problems.append(
+                f"{dim['name']}: business_key {key!r} is a SOURCE column that "
+                f"the projection renames to {renames[key]!r}, so it does not "
+                f"exist when the surrogate key is assigned. Use the target name."
+            )
+
+    if problems:
+        for problem in problems:
+            report.error("dimension-keys", problem)
+    elif gold.get("dimensions"):
+        report.ok(f"dimension-keys: all {len(gold['dimensions'])} business "
+                  f"key(s) survive their projection")
 
 
 def check_layer_chain(specs: dict, report: Report) -> None:
@@ -1024,6 +1101,209 @@ def check_semantic_model(specs: dict, report: Report) -> None:
                   f"{len(spec.get('measures') or [])} measures resolve")
 
 
+def check_view_columns(specs: dict, report: Report) -> None:
+    """Every column a `bi` view names exists on the gold table it reads.
+
+    check_view_dialect confirms the SQL is T-SQL and stops there, so a view
+    naming a column that does not exist is caught only when the warehouse tries
+    to create it -- and a view is validated at CREATE, not at query, so it
+    fails during deployment with nothing local having objected.
+
+    Three of six views failed that way here, all for the same reason: a fact
+    carries the MEASURE target name, and the view was written against the
+    business rule's. `created_ticket` becomes `created_ticket_count` on the way
+    into the fact, so a view reading `created_ticket` finds nothing.
+
+    Deliberately conservative. It only checks `alias.column` references whose
+    alias it can tie to a known gold table, and only flags a column absent from
+    that table's full column set. Anything it cannot resolve is left alone --
+    a false error here would be worse than the gap, because the fix would be to
+    stop trusting the check.
+    """
+    gold = specs.get("fabric/05-gold", {}).get("doc")
+    if not gold:
+        return
+
+    # Every column each gold table actually carries.
+    columns_by_table: dict[str, set[str]] = {}
+    for dimension in gold.get("dimensions", []):
+        names = {c["target"] for c in dimension.get("columns", []) or []}
+        names.add(dimension["surrogate_key"])
+        names.update(dimension.get("business_key", []))
+        for rule in dimension.get("business_rules", []) or []:
+            names.add(rule["target"])
+        # SCD2 validity columns are INJECTED by merge_scd2, not declared in
+        # `columns`. A type2 dimension really does carry is_current at runtime,
+        # so a view filtering on it is correct -- flagging that would be a
+        # false error, and a check that cries wolf gets switched off.
+        if dimension.get("scd") == "type2":
+            scd2 = dimension.get("scd2_columns") or {}
+            names |= {
+                scd2.get("valid_from", "valid_from"),
+                scd2.get("valid_to", "valid_to"),
+                scd2.get("is_current", "is_current"),
+                scd2.get("version", "version"),
+            }
+
+        # A generated calendar's columns come from the library, not the spec.
+        if dimension.get("source") == "generated":
+            names |= {"full_date", "date_sk", "year", "quarter", "month",
+                      "month_name", "year_month", "week_of_year", "day_of_month",
+                      "day_name", "is_weekend", "fiscal_year", "fiscal_quarter"}
+        columns_by_table[dimension["name"]] = names
+
+    for fact in gold.get("facts", []):
+        names = {d["target"] for d in fact.get("degenerate_dimensions", []) or []}
+        names |= {k["target"] for k in fact.get("dimension_keys", []) or []}
+        names |= {m["target"] for m in fact.get("measures", []) or []}
+        names |= {b["target"] for b in fact.get("business_rules", []) or []}
+        names |= {q["target"] for q in fact.get("quality_flags", []) or []}
+
+        # A business rule's target is RENAMED AWAY when a measure reads it.
+        # `created_ticket` is computed by a rule, then renamed to the measure's
+        # target `created_ticket_count` before the write, so the rule's own
+        # name is not a column on the finished fact.
+        #
+        # This is the exact trap the views fell into: they were written against
+        # the rule names, which read naturally and do not exist.
+        renamed_away = {m["source"] for m in fact.get("measures", []) or []
+                        if m.get("source") and m["source"] != m["target"]}
+        renamed_away |= {d["source"] for d in fact.get("degenerate_dimensions", []) or []
+                         if d.get("source") and d["source"] != d["target"]}
+        names -= renamed_away
+
+        columns_by_table[fact["name"]] = names
+
+    from_join = re.compile(r"(?:FROM|JOIN)\s+(?:dbo|bi)\.(\w+)\s+(?:AS\s+)?(\w+)",
+                           re.IGNORECASE)
+    qualified = re.compile(r"\b(\w+)\.(\w+)\b")
+    keywords = {"as", "on", "and", "or", "select", "from", "join", "where",
+                "group", "by", "inner", "left", "outer", "cross", "apply"}
+
+    problems: list[str] = []
+    for view in gold.get("views", []) or []:
+        sql = view.get("sql", "")
+        aliases = {alias: table for table, alias in from_join.findall(sql)}
+        if not aliases:
+            continue
+        for alias, column in qualified.findall(sql):
+            table = aliases.get(alias)
+            if not table or table not in columns_by_table:
+                continue
+            if column.lower() in keywords:
+                continue
+            if column in columns_by_table[table]:
+                continue
+            problems.append(
+                f"{view['name']}: reads {alias}.{column}, but {table} has no "
+                f"column {column!r}. A view is validated when CREATED, so this "
+                f"fails at deploy.")
+
+    if problems:
+        for problem in dict.fromkeys(problems):
+            report.error("view-columns", problem)
+    elif gold.get("views"):
+        report.ok(f"view-columns: all {len(gold['views'])} bi view(s) reference "
+                  f"real gold columns")
+
+
+def check_model_names(specs: dict, report: Report) -> None:
+    """Names in the semantic model are unique CASE-INSENSITIVELY, and every
+    DAX column reference resolves to a DISPLAY name.
+
+    Both of these deployed cleanly and failed afterwards:
+
+    1. Power BI treats names case-insensitively. `Month` (from month_name) and
+       a hidden sort key named `month` are the SAME name, and the model refuses
+       to import with "Item 'month' already exists in the collection".
+       check_semantic_model compares case-sensitively, so it passed.
+
+    2. DAX resolves DISPLAY names. Renaming a raw fact column to `Line Direct
+       Hours` -- which the model does deliberately, so nobody can build an
+       unreviewed total -- and then writing SUM('Time Entry'[direct_hours])
+       gives a model that deploys perfectly and fails on every query. Eighteen
+       measures were wrong that way here, and only query_model.py --smoke
+       found them, which needs a deployed model and a populated warehouse.
+    """
+    model = specs.get("powerbi/01-semantic-model", {}).get("doc")
+    if not model:
+        return
+
+    measures_by_table: dict[str, list[str]] = {}
+    for measure in model.get("measures", []):
+        measures_by_table.setdefault(measure["table"], []).append(measure["name"])
+
+    problems: list[str] = []
+    display_by_table: dict[str, set[str]] = {}
+
+    for table in model.get("tables", []):
+        name = table["name"]
+        display = [c.get("name", c["source"]) for c in table.get("columns", [])]
+        display_by_table[name] = {d.lower() for d in display}
+
+        seen: dict[str, str] = {}
+        for item in display:
+            key = item.lower()
+            if key in seen and seen[key] != item:
+                problems.append(
+                    f"{name}: columns {seen[key]!r} and {item!r} differ only by "
+                    f"case. Power BI treats them as one name and refuses to "
+                    f"load the model.")
+            seen[key] = item
+
+        for measure in measures_by_table.get(name, []):
+            if measure.lower() in seen:
+                problems.append(
+                    f"{name}: measure {measure!r} collides with column "
+                    f"{seen[measure.lower()]!r}. Only the first collision is "
+                    f"reported at deploy, so they surface one at a time.")
+
+        # sort_by names a DISPLAY name on the same table. A source name loads
+        # fine and silently drops the sort -- months read April, August, December.
+        for column in table.get("columns", []):
+            sort_by = column.get("sort_by")
+            if sort_by and sort_by.lower() not in display_by_table[name]:
+                problems.append(
+                    f"{name}: column {column.get('name', column['source'])!r} "
+                    f"sorts by {sort_by!r}, which is not a display name on this "
+                    f"table.")
+
+    for hierarchy in model.get("hierarchies", []):
+        known = display_by_table.get(hierarchy["table"], set())
+        for level in hierarchy["levels"]:
+            if level.lower() not in known:
+                problems.append(
+                    f"hierarchy {hierarchy['name']!r}: level {level!r} is not a "
+                    f"display name on {hierarchy['table']!r}.")
+
+    # DAX column references.
+    reference = re.compile(r"'([^']+)'\[([^\]]+)\]")
+    for measure in model.get("measures", []):
+        for table_name, column in reference.findall(measure.get("expression", "")):
+            if table_name not in display_by_table:
+                problems.append(
+                    f"measure {measure['name']!r} references table "
+                    f"{table_name!r}, which the model does not declare.")
+                continue
+            known = display_by_table[table_name]
+            known |= {m.lower() for m in measures_by_table.get(table_name, [])}
+            # Surrogate keys are injected by the generator, not declared.
+            if column.lower() in known or column.endswith("_sk"):
+                continue
+            problems.append(
+                f"measure {measure['name']!r} references "
+                f"'{table_name}'[{column}], which is not a display name on that "
+                f"table. DAX resolves display names, so this deploys cleanly "
+                f"and returns an error on every query.")
+
+    if problems:
+        for problem in problems:
+            report.error("model-names", problem)
+    else:
+        report.ok(f"model-names: {len(model.get('tables', []))} table(s) have no "
+                  f"case-insensitive collisions and all DAX references resolve")
+
+
 def check_report_fields(specs: dict, report: Report) -> None:
     """Every report field exists in the semantic model it binds to.
 
@@ -1337,6 +1617,48 @@ def check_cicd(specs: dict, report: Report) -> None:
         report.warn("cicd", warning)
 
 
+def check_cicd_scripts(specs: dict, report: Report, project: Path) -> None:
+    """Every `python <path>` in a workflow step names a script that exists.
+
+    The C1 prompt lists this as a gate and says it earned its place -- the
+    first version of that spec referenced sync_workspace.py, which never
+    existed. But the check lived only in generate_workflows.py, which resolves
+    against its --out directory and is not run by validate. So a project could
+    validate cleanly with step paths that resolve to nothing and fail on its
+    first CI run, which is exactly the failure the gate was described as
+    preventing.
+
+    Paths are relative to the REPOSITORY ROOT. Projects are siblings of the
+    framework inside it, so the project's parent is that root.
+    """
+    spec = specs.get("cicd/01-pipeline", {}).get("doc")
+    if not spec:
+        return
+
+    repo_root = project.parent
+    pattern = re.compile(r"python\s+(\S+\.py)")
+    missing: list[str] = []
+    checked = 0
+
+    for workflow in spec.get("workflows", []):
+        for job in workflow.get("jobs", []):
+            for step in job.get("steps", []):
+                for path in pattern.findall(step):
+                    checked += 1
+                    if not (repo_root / path).exists():
+                        missing.append(f"{workflow['name']}/{job['id']}: {path}")
+
+    if missing:
+        for item in dict.fromkeys(missing):
+            report.error("cicd-scripts", f"step names a script that does not "
+                                         f"exist: {item}")
+        report.error("cicd-scripts",
+                     f"resolved against {repo_root}. A workflow generated from "
+                     f"this fails only once CI is already running.")
+    elif checked:
+        report.ok(f"cicd-scripts: all {checked} step script path(s) resolve")
+
+
 SEMANTIC_CHECKS = (
     check_key_types,
     check_environment_ids,
@@ -1347,6 +1669,9 @@ SEMANTIC_CHECKS = (
     check_watermarks,
     check_defect_handlers,
     check_view_dialect,
+    check_dimension_business_keys,
+    check_view_columns,
+    check_model_names,
     check_discarded_rows,
     check_cascade_quarantine,
     check_git_integration,
@@ -1398,6 +1723,8 @@ def main() -> int:
     check_rule_enum_fresh(specs, report, contracts)
     for check in SEMANTIC_CHECKS:
         check(specs, report)
+    # Needs the project path to resolve step paths against the repository root.
+    check_cicd_scripts(specs, report, project)
 
     return report.render(args.strict)
 

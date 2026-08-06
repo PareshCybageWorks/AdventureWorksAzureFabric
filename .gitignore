@@ -16,7 +16,12 @@ dist/
 
 # Presentation material that is not framework code. Untracking alone does not
 # stick -- a blanket `git add -A` re-adds it, which is how it landed twice.
-/AzureFabricMCP/
+#
+# Scoped to the FILE, never the directory: AzureFabricMCP/ now holds the whole
+# framework, and ignoring it wholesale would drop the framework from the repo
+# on the next commit while everything still looked fine on disk.
+/AzureFabricMCP/Quiz_AI_Master_Orchestrator.md
 
 # Projects live in their own repositories; the framework holds no project data.
 /02_demo-servicenow/
+/03_live_demo/

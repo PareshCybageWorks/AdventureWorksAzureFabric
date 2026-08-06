@@ -67,7 +67,10 @@ Slide Takeaway
 
 "Don't ask the AI to solve the problem until you've given it the map of the environment."
 
-This aligns especially well with Fabric MCP, because the MCP layer exposes the environment (workspaces, artifacts, metadata, and tools) that the AI agent uses as its operational map before it begins executing tasks.
+This aligns especially well with Fabric MCP, 
+because the MCP layer exposes the environment 
+(workspaces, artifacts, metadata, and tools) that 
+the AI agent uses as its operational map before it begins executing tasks.
 
 ---
 
@@ -82,13 +85,18 @@ This aligns especially well with Fabric MCP, because the MCP layer exposes the e
 - **The Power:** Real-time visibility into data pipeline health, quality metrics, SLA performance
 
 **Quote for Presentation:**
-> "Like having cameras in every corner of the heist location, Power BI dashboards give us real-time intelligence. The agents automatically generate the surveillance system."
+> "Like having cameras in every corner of the heist location, Power BI dashboards give us real-time intelligence. 
+The agents automatically generate the surveillance system."
 
 
 **ChatGPT Quote for Presentation:**
 Speaker Notes (45 seconds)
 
-"A perfect mission plan isn't enough if the situation changes and nobody notices. In Dhurandhar, the team constantly relies on fresh intelligence to understand what's happening on the ground before making the next move. Power BI MCP plays exactly the same role for AI. It gives agents access to live business intelligence—KPIs, trends, semantic models, and operational metrics—so every recommendation is based on the latest state of the business rather than yesterday's data."
+"A perfect mission plan isn't enough if the situation changes and nobody notices. In Dhurandhar, the team constantly relies on 
+fresh intelligence to understand what's happening on the ground before making the next move. 
+Power BI MCP plays exactly the same role for AI. 
+It gives agents access to live business intelligence—KPIs, trends, semantic models, and 
+operational metrics—so every recommendation is based on the latest state of the business rather than yesterday's data."
 
 Slide Takeaway
 
@@ -120,7 +128,9 @@ Specs → Fabric MCP → Power BI MCP
 
 **ChatGPT Quote for Presentation:**
 
-> "Just as Hamza never commits to a mission without validating his intelligence and adapting his strategy, AI teams shouldn't ship from the first draft. Prototype, test, adjust, and then execute."
+> "Just as Hamza never commits to a mission without validating his intelligence 
+and adapting his strategy, AI teams shouldn't ship from the first draft. 
+Prototype, test, adjust, and then execute."
 
 ---
 
@@ -167,7 +177,12 @@ Slide Takeaway
 **ChatGPT Quote for Presentation:**
 Speaker Notes (45 seconds)
 
-"After weeks of planning in Dhurandhar, nobody stops to ask, 'What should I do next?' The operation unfolds according to a predefined sequence, with each team executing its responsibility at the right time. GitHub Actions works the same way. A single commit can automatically trigger builds, run tests, perform security scans, validate infrastructure, deploy to staging, and promote to production—all without manual coordination. The pipeline becomes the trusted execution engine."
+"After weeks of planning in Dhurandhar, nobody stops to ask, 
+'What should I do next?' The operation unfolds according to a predefined sequence, 
+with each team executing its responsibility at the right time. 
+GitHub Actions works the same way. A single commit can automatically trigger builds, 
+run tests, perform security scans, validate infrastructure, deploy to staging, and promote to production—all without manual coordination. 
+The pipeline becomes the trusted execution engine."
 ---
 
 
@@ -193,18 +208,29 @@ Speaker Notes (45 seconds)
 **ChatGPT Quote for Presentation:**
 >Speaker Notes (60 seconds)
 
-"Each pillar we've discussed solves a different part of the problem. Specifications define what needs to be built. Fabric MCP provides access to the environment. Power BI MCP delivers live business intelligence. Feature-driven development assigns ownership. GitHub Actions automates execution. But none of these components creates value on its own. Just as a complex intelligence mission requires a strategist to coordinate every moving part, an enterprise AI platform needs an orchestrator that understands the overall objective, invokes the right tools at the right time, maintains context, and ensures every component works together toward a successful outcome."
+"Each pillar we've discussed solves a different part of the problem. Specifications define what needs to be built. 
+Fabric MCP provides access to the environment. 
+Power BI MCP delivers live business intelligence. 
+Feature-driven development assigns ownership. 
+GitHub Actions automates execution. 
+But none of these components creates value on its own. 
+Just as a complex intelligence mission requires a strategist to coordinate every moving part, 
+an enterprise AI platform needs an orchestrator that understands the overall objective, 
+invokes the right tools at the right time, maintains context, and ensures every component works together toward a successful outcome."
 
 ---
 
 **ChatGPT Quote for Presentation:**
 >Final Takeaway
 
-"Enterprise AI isn't about having the smartest agent—it's about orchestrating the right agents, tools, data, and workflows into one coordinated system."
+"Enterprise AI isn't about having the smartest agent—it's about orchestrating the right agents, tools, 
+data, and workflows into one coordinated system."
 
 Closing Statement
 
-"Just as Dhurandhar portrays a complex intelligence operation succeeding through strategy, coordination, and disciplined execution, enterprise AI succeeds when specifications, data access, intelligence, specialized agents, and automation are orchestrated as a single, unified system."
+"Just as Dhurandhar portrays a complex intelligence operation succeeding through strategy, 
+coordination, and disciplined execution, enterprise AI succeeds when specifications, 
+data access, intelligence, specialized agents, and automation are orchestrated as a single, unified system."
 
 ## 📊 EXECUTION TIMELINE: The Heist Minute-by-Minute
 

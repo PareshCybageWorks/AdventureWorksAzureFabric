@@ -14,7 +14,7 @@ Find out where you are. This works on a project you have never seen, in a
 session with no memory of the last one:
 
 ```bash
-python framework/tools/project_status.py --project <name>
+python AzureFabricMCP/framework/tools/project_status.py --project <name>
 ```
 
 - **No project yet** → create it, then start at F1.
@@ -28,7 +28,7 @@ Trust it over the conversation, including over your own summary of it.
 ## Creating one
 
 ```bash
-python framework/tools/new_project.py --name <NN_project-name>
+python AzureFabricMCP/framework/tools/new_project.py --name <NN_project-name>
 ```
 
 Copies every template in and creates the folder structure. It deliberately does
@@ -47,12 +47,12 @@ brief already answered.
 
 ## Then run the interview
 
-**Read `framework/prompts/00-interview.md` and follow it.** It carries how to
+**Read `AzureFabricMCP/framework/prompts/00-interview.md` and follow it.** It carries how to
 ask, the no-brief fallback, what to derive rather than ask, what to refuse to
 guess, and the failure modes that make interviews produce plausible-but-wrong
 specs.
 
-Per stage, its own prompt at `framework/prompts/<track>/<stage>.md` holds the
+Per stage, its own prompt at `AzureFabricMCP/framework/prompts/<track>/<stage>.md` holds the
 questions and the exit gate. Read them one stage at a time — all ten at once is
 a great deal of text, most of it not yet relevant.
 
@@ -62,7 +62,7 @@ a great deal of text, most of it not yet relevant.
 - **Always recommend an option.** The user is choosing between things they have
   not compared; you have.
 - **Never ask what the spec already implies.** Derive it.
-- **Validate after every stage** — `framework/generators/validate.py`. Do not
+- **Validate after every stage** — `AzureFabricMCP/framework/generators/validate.py`. Do not
   advance past errors.
 - **Honour each stage's exit gate**, including when the user would rather move
   on. Every gate exists because skipping it cost someone a day.
@@ -73,12 +73,12 @@ a great deal of text, most of it not yet relevant.
 ## Finishing
 
 ```bash
-python framework/generators/validate.py --project <name>
-python framework/tools/dryrun.py        --project <name>
+python AzureFabricMCP/framework/generators/validate.py --project <name>
+python AzureFabricMCP/framework/tools/dryrun.py        --project <name>
 ```
 
 `dryrun` exercises the specs against sample data with no Fabric involved, so
 the first deployment is not also the first execution.
 
-Provisioning is `framework/prompts/fabric/01-scaffolding.md` Step 5; the
+Provisioning is `AzureFabricMCP/framework/prompts/fabric/01-scaffolding.md` Step 5; the
 repository side is `docs/CI-SETUP.md`.

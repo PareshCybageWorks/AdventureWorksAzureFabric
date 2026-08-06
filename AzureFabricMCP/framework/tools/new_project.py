@@ -47,7 +47,7 @@ ORDER = [
     ("cicd",    "01-pipeline",    "Workflows and gates. Needs F1 for environments."),
 ]
 
-SUBDIRS = ["fabric", "powerbi", "dataops", "cicd", "data", "docs",
+SUBDIRS = ["fabric", "powerbi", "dataops", "cicd", "data", "docs", ".config",
            "generated/notebooks", "generated/pipelines",
            "generated/migrations", "generated/model", "generated/reports"]
 
@@ -59,7 +59,103 @@ GITIGNORE = """# generated/ is deliberately NOT ignored.
 
 __pycache__/
 *.pyc
+
+# .config/ holds this project's secrets.
+#
+# Ignore the whole directory rather than listing filenames. A denylist misses
+# the file nobody anticipated -- .env.local, .env.prod, creds.json, a pasted
+# token in notes.txt -- and it only has to miss once. The two files that ARE
+# safe to commit are re-included explicitly below.
+.config/*
+!.config/.env.example
+!.config/README.md
+
+# Belt and braces: a .env anywhere in the project, not only under .config/.
 .env
+.env.*
+!.env.example
+"""
+
+# Committed template. The real `.env` sits beside it and is gitignored, so the
+# pair documents every variable a project needs without any project ever
+# holding a secret in version control.
+ENV_EXAMPLE = """\
+# =============================================================================
+# {name} -- secret template
+# =============================================================================
+# COPY THIS FILE to `.env` in this directory and fill it in. Never edit this
+# file with real values: `.env` is gitignored, `.env.example` is committed, and
+# the whole point of the pair is that one of them can be read by anyone.
+#
+#   cp .config/.env.example .config/.env
+#
+# Loaded by framework/deploy/_secrets.py::load_project_env, which walks up from
+# the working directory looking for `.config/.env`, or reads $FABRIC_PROJECT if
+# that is set.
+#
+# AN EXISTING ENVIRONMENT VARIABLE ALWAYS WINS over a value in this file. CI
+# injects secrets as environment variables from repository secrets, and a file
+# checked out beside the specs must never silently override what the runner
+# set.
+#
+# Nothing here belongs in a spec. Specs carry REFERENCES only -- ${{VAR}} or
+# keyvault://vault/name -- and validate.py::check_secrets fails the build on a
+# literal.
+# =============================================================================
+
+# ---- Fabric -----------------------------------------------------------------
+# Service principal used by the deploy scripts. Locally these can be left empty
+# and `az login` used instead -- _secrets.py tries the environment first and the
+# deploy scripts fall back to the Azure CLI credential.
+FABRIC_TENANT_ID=
+FABRIC_CLIENT_ID=
+AZURE_CLIENT_SECRET=
+
+# ---- Landing zone -----------------------------------------------------------
+# Referenced by fabric/02-sources.yaml connection.location.
+LANDING_ACCOUNT=
+LANDING_CONTAINER=
+
+# ---- Per-source credentials -------------------------------------------------
+# Add one block per source registered in fabric/02-sources.yaml. The variable
+# names must match the ${{...}} references that spec declares.
+"""
+
+CONFIG_README = """\
+# `.config/` — project secrets
+
+Everything in this directory is **per project**. Two projects on one machine do
+not share credentials, and no secret sits beside a spec where it could be
+committed by accident.
+
+| File | Committed | Purpose |
+|---|---|---|
+| `.env.example` | yes | The template. Documents every variable and what it is for. |
+| `.env` | **no** | Real values. Gitignored. |
+| anything else here | **no** | The `.gitignore` ignores the whole directory except the two files above. |
+
+## Setup
+
+```bash
+cp .config/.env.example .config/.env
+```
+
+## How it is read
+
+`framework/deploy/_secrets.py::load_project_env` walks up from the working
+directory looking for `.config/.env`, or reads `$FABRIC_PROJECT` if set. It is
+called lazily on the first `resolve()`, so scripts do not have to load it
+themselves.
+
+**An existing environment variable always wins.** CI injects secrets as
+environment variables, and a file checked out beside the specs must not
+silently override what the runner set.
+
+## What does not go here
+
+Specs never hold a secret — they hold a reference, `${VAR}` or
+`keyvault://vault/name`. `validate.py::check_secrets` fails the build on a
+literal.
 """
 
 
@@ -202,6 +298,15 @@ def main() -> int:
     (root / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
     print(f"  created README.md")
     print(f"  created .gitignore")
+
+    # Secrets scaffolding. Only the TEMPLATE is written -- never a `.env`, so
+    # this can never create a file that looks configured but holds nothing, and
+    # a real one is never overwritten.
+    (root / ".config" / ".env.example").write_text(
+        ENV_EXAMPLE.format(name=args.name), encoding="utf-8")
+    (root / ".config" / "README.md").write_text(CONFIG_README, encoding="utf-8")
+    print(f"  created .config/.env.example")
+    print(f"  created .config/README.md")
 
     print()
     print("Fill the specs in this order -- each reads names from the one above:")

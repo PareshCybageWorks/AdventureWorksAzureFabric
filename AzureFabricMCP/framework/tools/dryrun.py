@@ -170,6 +170,23 @@ def rule_deduplicate(rows, ctx, keys=None, keep="latest", order_by=None, **_):
 
 
 def rule_enforce_allowed_values(rows, ctx, column=None, values=None, **_):
+    # A column this simulator never built cannot be judged.
+    #
+    # apply_transforms here evaluates only a few known derived columns; it is
+    # not a SQL expression engine. So a check against a spec-derived column --
+    # `resolution_sequence`, computed by a CASE expression -- saw None on every
+    # row and rejected all of them, reporting 67 of 67 incidents quarantined
+    # where Fabric quarantined 28.
+    #
+    # Skipping and SAYING SO is the honest outcome. Silently rejecting
+    # everything makes the dry run look like a catastrophic data finding, and
+    # the natural response to that is to stop running it.
+    if rows and not any(column in row for row in rows):
+        ctx.setdefault("skipped", []).append(
+            f"enforce_allowed_values on {column!r} -- derived column not "
+            f"computed by the simulator")
+        return rows, [], 0
+
     kept, rejected = [], []
     for row in rows:
         (kept if row.get(column) in (values or []) else rejected).append(row)
@@ -204,7 +221,30 @@ def rule_quarantine_negative_total(rows, ctx, column=None, min_exclusive=0, **_)
 
 def rule_enforce_referential_integrity(rows, ctx, column=None, references=None, **_):
     table, parent_column = references.rsplit(".", 1)
+
+    # Strip the layer qualifier, matching RuleContext.resolve_table in the real
+    # library: `silver.stg_sys_user_group.sys_id` names the table
+    # `stg_sys_user_group`.
+    #
+    # Without this the parent lookup missed entirely, `parents` was empty and
+    # EVERY row became an orphan -- the dry run reported four tables at 100%
+    # quarantined where Fabric quarantined none of them. A simulation that
+    # says the pipeline destroys all data is worse than no simulation: it is
+    # wrong in the direction that gets it switched off.
+    table = table.split(".")[-1]
+
     parents = {r.get(parent_column) for r in ctx["tables"].get(table, [])}
+    if not parents:
+        # The parent table has not been built in this run. Silence beats a
+        # false 100% rejection; the layer-chain check proves the reference
+        # resolves, and this cannot.
+        return rows, [], 0
+
+    # A NULL foreign key IS quarantined, matching the real rule: it left-joins
+    # and keeps only rows whose parent key resolved, and a null never matches.
+    # An earlier version here treated null as "nothing to resolve" and kept it,
+    # which made the simulation disagree with Fabric in the flattering
+    # direction -- 67 incidents kept where the real run kept 39.
     kept, rejected = [], []
     for row in rows:
         (kept if row.get(column) in parents else rejected).append(row)
@@ -341,19 +381,51 @@ def resolve_params(rule: dict, table: dict) -> dict:
     return params
 
 
-def run(project: Path, verbose: bool) -> int:
-    specs = project / "specs"
-    platform = yaml.safe_load((specs / "00-platform.yaml").read_text(encoding="utf-8"))
-    sources = yaml.safe_load((specs / "02-sources.yaml").read_text(encoding="utf-8"))
-    bronze_spec = yaml.safe_load((specs / "mappings" / "bronze.yaml").read_text(encoding="utf-8"))
-    silver_spec = yaml.safe_load((specs / "mappings" / "silver.yaml").read_text(encoding="utf-8"))
-    dq_spec = yaml.safe_load((specs / "04-data-quality.yaml").read_text(encoding="utf-8"))
+def _load(project: Path, new: str, legacy: str) -> dict:
+    """Read a spec from the track-based layout, falling back to the legacy one.
 
-    source = sources["sources"][0]
-    landing = (project / source["connection"]["location_dev"].lstrip("./")).resolve()
+    The spec set moved from a flat `specs/` collection to track folders
+    (fabric/, powerbi/, dataops/, cicd/), and new_project.py has stopped
+    creating `specs/` entirely. This tool still read the old paths, so the
+    dryrun the framework documents as the step BEFORE first deployment could
+    not run on any project scaffolded by the current tooling -- it failed with
+    FileNotFoundError naming a file that is never produced.
+    """
+    for candidate in (project / new, project / legacy):
+        if candidate.exists():
+            return yaml.safe_load(candidate.read_text(encoding="utf-8"))
+    raise FileNotFoundError(
+        f"no spec found at {new} or {legacy} under {project}")
+
+
+def run(project: Path, verbose: bool) -> int:
+    platform = _load(project, "fabric/01-scaffolding.yaml", "specs/00-platform.yaml")
+    sources = _load(project, "fabric/02-sources.yaml", "specs/02-sources.yaml")
+    bronze_spec = _load(project, "fabric/03-bronze.yaml", "specs/mappings/bronze.yaml")
+    silver_spec = _load(project, "fabric/04-silver.yaml", "specs/mappings/silver.yaml")
+    dq_spec = _load(project, "dataops/01-monitoring.yaml", "specs/04-data-quality.yaml")
+
+    # EVERY source, not sources[0].
+    #
+    # Each source has its own location_dev, so a project with more than one --
+    # ServiceNow plus a synthetic feed, say -- lands files in several folders.
+    # Reading only the first raised KeyError on the first entity belonging to
+    # any other source, which reads as a corrupt spec rather than as a tool
+    # that only ever looked at one source.
+    entity_index = {
+        f"{s['name']}.{e['name']}": (s, e)
+        for s in sources["sources"]
+        for e in s.get("entities", [])
+    }
+    landing_by_source = {
+        s["name"]: (project / (s["connection"].get("location_dev") or "./data")
+                    .lstrip("./")).resolve()
+        for s in sources["sources"]
+    }
 
     print(f"Dry run: {platform['metadata']['name']}")
-    print(f"Landing: {landing}")
+    for name, path in landing_by_source.items():
+        print(f"Landing: {name} -> {path}")
     print()
 
     tables: dict[str, list[Row]] = {}
@@ -362,14 +434,24 @@ def run(project: Path, verbose: bool) -> int:
 
     # ---- bronze: land verbatim ------------------------------------------
     print("BRONZE  (landing -- no transformation)")
-    entity_by_name = {e["name"]: e for e in source["entities"]}
     for mapping in bronze_spec["tables"]:
-        entity = entity_by_name[mapping["source_entity"].split(".", 1)[1]]
-        path = landing / entity["file_pattern"]
-        if not path.exists():
-            print(f"  MISSING  {path.name}")
+        reference = mapping["source_entity"]
+        if reference not in entity_index:
+            print(f"  UNKNOWN  {reference} is not registered in 02-sources")
             failures += 1
             continue
+        owning_source, entity = entity_index[reference]
+        landing = landing_by_source[owning_source["name"]]
+
+        pattern = entity.get("file_pattern") or f"{entity['name']}.csv"
+        # file_pattern is a PATTERN: an entity may land several files.
+        matches = sorted(landing.glob(pattern)) if ("*" in pattern or "?" in pattern) \
+            else ([landing / pattern] if (landing / pattern).exists() else [])
+        if not matches:
+            print(f"  MISSING  {pattern}")
+            failures += 1
+            continue
+        path = matches[0]
         with path.open(encoding="utf-8", newline="") as fh:
             reader = csv.DictReader(fh)
             actual_header = list(reader.fieldnames or [])
@@ -387,7 +469,10 @@ def run(project: Path, verbose: bool) -> int:
             failures += 1
 
         for row in rows:
-            row["_source"] = source["name"]
+            # The OWNING source, so each bronze row is stamped with the source
+            # it actually came from rather than with whichever happened to be
+            # first in the registry.
+            row["_source"] = owning_source["name"]
             row["_load_id"] = "dryrun"
         tables[mapping["target"]] = rows
         print(f"  {mapping['target']:<32} {len(rows):>8,} rows")
@@ -468,7 +553,7 @@ def run(project: Path, verbose: bool) -> int:
         for check in expectation.get("checks", []):
             if check.get("measured_on") != "output":
                 continue
-            observed = evaluate(check, rows, tables)
+            observed = evaluate(check, rows, tables, ctx.setdefault("skipped", []))
             if observed is None:
                 continue
             checked += 1
@@ -498,24 +583,70 @@ def run(project: Path, verbose: bool) -> int:
         print(f"    {year}                    {by_year[year]:>18,.2f}")
 
     print()
+    # Anything the simulator could not evaluate, stated plainly and LAST so it
+    # is the thing read alongside the verdict.
+    #
+    # A dry run that quietly skips rules reads as a clean pass, and the whole
+    # point of this tool is that the first real execution is not also the first
+    # surprise. "PASSED" with unevaluated rules is a weaker statement than
+    # "PASSED", and the difference belongs on screen.
+    skipped = list(dict.fromkeys(ctx.get("skipped") or []))
+    if skipped:
+        print()
+        print(f"NOT SIMULATED  ({len(skipped)} rule(s) did NOT run here -- a real run will)")
+        for note in skipped:
+            print(f"  {note}")
+        print()
+        print("  This simulator evaluates a fixed set of derived columns, not")
+        print("  arbitrary SQL expressions. Rules reading a column it did not")
+        print("  build are skipped rather than failed, so the counts above are")
+        print("  an UPPER bound on rows kept.")
+
+    print()
     if failures:
         print(f"DRY RUN FAILED -- {failures} problem(s)")
+    elif skipped:
+        print("DRY RUN PASSED -- with unevaluated rules, listed above")
     else:
         print("DRY RUN PASSED -- specs execute cleanly against the data")
     return 1 if failures else 0
 
 
-def evaluate(check: dict, rows: list[Row], tables: dict) -> float | None:
-    """Measure one expectation against the produced rows."""
+def evaluate(check: dict, rows: list[Row], tables: dict,
+             skipped: list[str] | None = None) -> float | None:
+    """Measure one expectation against the produced rows.
+
+    Returns None when the check cannot be measured here -- which is not the
+    same as passing, and the caller reports it separately.
+    """
     if not rows:
         return None
     total = len(rows)
     rule = check["rule"]
 
+    # A column this simulator never built cannot be measured. Reporting 100%
+    # breached is the same mistake the cleansing rules made: it looks like a
+    # catastrophic data finding and is really a limitation of the tool.
+    named = [c for c in ([check.get("column")] + (check.get("columns") or []))
+             if c]
+    for column in named:
+        if not any(column in row for row in rows):
+            if skipped is not None:
+                skipped.append(
+                    f"{check['id']} ({rule}) on {column!r} -- derived column "
+                    f"not computed by the simulator")
+            return None
+
     if rule == "not_null":
         return sum(1 for r in rows if _is_blank(r.get(check["column"]))) / total
     if rule == "unique":
-        columns = check["columns"]
+        # The contract permits `column` (one) or `columns` (composite). Reading
+        # only the plural form raised KeyError on a perfectly valid check, which
+        # reads as a malformed spec rather than as a tool handling one of two
+        # documented shapes.
+        columns = check.get("columns") or ([check["column"]] if check.get("column") else [])
+        if not columns:
+            return None
         seen = {tuple(r.get(c) for c in columns) for r in rows}
         return 1 - (len(seen) / total)
     if rule == "accepted_values":

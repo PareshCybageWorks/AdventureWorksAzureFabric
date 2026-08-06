@@ -12,12 +12,16 @@ warehouse connector when the gold notebooks run, and issuing CREATE TABLE here
 would race that -- two definitions of the same table, disagreeing the moment a
 column changes.
 
-The `bi` views ARE generated. Nothing else creates them, and they are the
-surface Power BI binds to: a report is reshaped by altering a view instead of
-migrating a physical table.
+The `bi` views are NOT generated here either, despite being the surface Power
+BI binds to. They select from the `dbo` tables Spark creates, so they cannot
+exist until after the first gold run -- emitting them as a deploy-time
+migration failed with `Invalid object name 'dbo.fct_sales'` on a fresh
+environment. They are built by `nb_build_bi_views` as the last step of the gold
+pipeline, from this same spec, so there is one definition and one mechanism.
 
-Views are emitted as CREATE OR ALTER so a re-run is a no-op rather than an
-error, which is what makes the migration idempotent.
+So this generator currently emits ONE migration: the two schemas. That is not a
+placeholder -- it is the only DDL that can safely run before anything else
+exists.
 
 Usage:
     python generate_ddl.py --specs ./01_demo-project --out ./01_demo-project/generated/migrations

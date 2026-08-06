@@ -113,14 +113,44 @@ def render(definition: dict) -> str:
     return json.dumps(definition, indent=2, sort_keys=True) + "\n"
 
 
+# How many bronze notebooks may start at once.
+#
+# Bronze activities have no data dependency on each other, so the pipeline used
+# to declare none -- every table requested a Livy session simultaneously. On a
+# small or shared capacity that exceeds the Spark limit and the run dies:
+#
+#   TooManyRequestsForCapacity -- HTTP 430
+#
+# Sixteen tables against a shared FTL64 trial landed eight and failed the rest,
+# and only SOME evictions say so; the others surface as "System cancelled the
+# Spark session due to statement execution failures", which reads exactly like
+# a code defect.
+#
+# Batching costs nothing when capacity is plentiful -- the batches still run
+# back to back -- and is the difference between a slow run and a failed one
+# when it is not.
+BRONZE_BATCH = 6
+
+
 def build_bronze(platform: dict, sources: dict) -> dict:
     verb = platform["naming"]["verbs"]["bronze"]
     template = platform["naming"]["notebook"]
-    activities = [
-        notebook_activity(template.format(verb=verb, layer="bronze", entity=entity["name"]))
+    names = [
+        template.format(verb=verb, layer="bronze", entity=entity["name"])
         for source in sources["sources"]
         for entity in source["entities"]
     ]
+
+    # Each batch waits on the previous one. Within a batch they still run in
+    # parallel, so throughput is preserved up to the concurrency limit.
+    activities = []
+    previous: list[str] = []
+    for start in range(0, len(names), BRONZE_BATCH):
+        batch = names[start:start + BRONZE_BATCH]
+        for name in batch:
+            activities.append(notebook_activity(name, previous))
+        previous = batch
+
     return wrap(activities)
 
 

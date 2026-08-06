@@ -39,7 +39,8 @@ import yaml
 
 # Sibling import: deploy scripts are run as files, not as a package.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _project import get_environment, get_storage_ids, get_workspace_id
+from _project import (get_environment, get_storage_ids, get_workspace_id,
+                      load_scaffolding)
 import _tsql
 
 ONELAKE = "https://onelake.dfs.fabric.microsoft.com"
@@ -120,9 +121,25 @@ def main() -> int:
     framework = Path(args.framework).resolve() if args.framework \
         else Path(__file__).resolve().parent.parent
 
-    specs = project / "specs"
-    platform = yaml.safe_load((specs / "00-platform.yaml").read_text(encoding="utf-8"))
-    sources = yaml.safe_load((specs / "02-sources.yaml").read_text(encoding="utf-8"))
+    # Resolve through _project rather than reading specs/ directly. This script
+    # hard-coded the LEGACY layout, so a project scaffolded by the current
+    # new_project.py -- which creates fabric/, powerbi/, dataops/, cicd/ and no
+    # specs/ -- failed with FileNotFoundError naming a file the scaffolder has
+    # never produced.
+    try:
+        platform, _layout = load_scaffolding(project)
+    except FileNotFoundError as exc:
+        print(f"  ERROR  {exc}")
+        return 2
+
+    sources_path = project / "fabric" / "02-sources.yaml"
+    if not sources_path.exists():
+        sources_path = project / "specs" / "02-sources.yaml"
+    if not sources_path.exists():
+        print(f"  ERROR  no source registry under {project}")
+        return 2
+    sources = yaml.safe_load(sources_path.read_text(encoding="utf-8"))
+
     try:
         env = get_environment(project, args.env)
         workspace = get_workspace_id(project, args.env)
@@ -143,33 +160,75 @@ def main() -> int:
 
     # ---- source data into the bronze lakehouse --------------------------
     bronze_item = provisioned.get("lh_bronze")
-    source = sources["sources"][0]
     landing_root = platform["storage"]["bronze"]["landing_path"].split("/ingest_date=")[0]
-    local_root = project / source["connection"]["location_dev"].lstrip("./")
 
     print(f"source data -> lh_bronze ({bronze_item})")
-    for entity in source["entities"]:
-        local = local_root / entity["file_pattern"]
-        if not local.exists():
-            print(f"  MISS   {local.name} not found at {local}")
-            failed += 1
+
+    # EVERY source, not sources[0].
+    #
+    # This loop read only the first registered source. On a single-source
+    # project that is indistinguishable from correct, which is why it survived;
+    # on a project with five it uploaded three entities and silently skipped
+    # twelve. Bronze would then land three tables, every downstream notebook
+    # would fail on a missing table, and nothing here would have reported a
+    # problem -- "3 uploaded, 0 failed" reads like success.
+    missing: list[str] = []
+    for source in sources.get("sources", []):
+        location_dev = (source.get("connection") or {}).get("location_dev")
+        if not location_dev:
+            # A source with no local landing path has nothing to push -- a
+            # shortcut or an in-place source. Not a failure.
+            print(f"  skip   {source['name']}: no location_dev declared")
             continue
-        remote = landing_root.format(source=source["name"], entity=entity["name"]) \
-            + "/" + entity["file_pattern"]
-        size = local.stat().st_size
-        if args.dry_run:
-            print(f"  would  {remote}  ({size:,} bytes)")
-            continue
-        ok = onelake.upload(bronze_item, remote, local.read_bytes())
-        print(f"  {'OK   ' if ok else 'FAIL '} {remote}  ({size:,} bytes)")
-        uploaded += ok
-        failed += not ok
+        local_root = project / location_dev.lstrip("./")
+
+        for entity in source.get("entities", []):
+            pattern = entity.get("file_pattern") or f"{entity['name']}.csv"
+
+            # file_pattern is a PATTERN. It was being used as a literal
+            # filename, so any entity declaring a glob -- `orders_*.csv`, a
+            # dated export, anything partitioned -- could never match and was
+            # reported missing however many files were sitting there.
+            #
+            # Bronze reads the whole landing FOLDER, so several files per
+            # entity is the normal case, not an edge one.
+            if "*" in pattern or "?" in pattern:
+                matches = sorted(local_root.glob(pattern))
+            else:
+                candidate = local_root / pattern
+                matches = [candidate] if candidate.exists() else []
+
+            if not matches:
+                # Reported, and counted separately from a failed upload. An
+                # absent file is usually an entity the extract could not
+                # produce -- a table missing from the source instance -- which
+                # is a different fact from an upload that went wrong.
+                missing.append(f"{source['name']}.{entity['name']}")
+                print(f"  MISS   {pattern} not found under {local_root}")
+                continue
+
+            remote_dir = landing_root.format(source=source["name"],
+                                             entity=entity["name"])
+            for local in matches:
+                remote = f"{remote_dir}/{local.name}"
+                size = local.stat().st_size
+                if args.dry_run:
+                    print(f"  would  {remote}  ({size:,} bytes)")
+                    continue
+                ok = onelake.upload(bronze_item, remote, local.read_bytes())
+                print(f"  {'OK   ' if ok else 'FAIL '} {remote}  ({size:,} bytes)")
+                uploaded += ok
+                failed += not ok
 
     # The framework library is delivered as a wheel on the Spark Environment;
     # see deploy/push_library.py. Nothing library-related is uploaded here.
 
     print()
-    print(f"{uploaded} uploaded, {failed} failed")
+    print(f"{uploaded} uploaded, {failed} failed, {len(missing)} missing locally")
+    if missing:
+        print("\nNo local file for: " + ", ".join(missing))
+        print("Nothing was uploaded for these, so bronze will fail on the table")
+        print("rather than landing an empty one that looks like a quiet day.")
     return 1 if failed else 0
 
 

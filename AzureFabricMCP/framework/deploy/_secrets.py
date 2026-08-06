@@ -35,9 +35,17 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 
 KEYVAULT = re.compile(r"^keyvault://([^/]+)/(.+)$")
 ENV = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$|^env:([A-Za-z_][A-Za-z0-9_]*)$")
+
+# Per-project secret file. Every project carries a `.config/` directory holding
+# its own .env, so two projects on one machine do not share one set of
+# credentials and a secret is never placed beside a spec where it could be
+# committed by accident.
+CONFIG_DIR = ".config"
+ENV_FILENAME = ".env"
 
 # Conventional environment variable per secret name, so a Key Vault reference
 # can be satisfied from the environment without the caller knowing which.
@@ -47,6 +55,7 @@ _WELL_KNOWN = {
 }
 
 _cache: dict[str, str] = {}
+_env_loaded = False
 
 
 class SecretNotFound(RuntimeError):
@@ -56,6 +65,55 @@ class SecretNotFound(RuntimeError):
     an authentication error against the wrong thing -- so it fails here, naming
     the reference that could not be resolved.
     """
+
+
+def load_project_env(project: str | os.PathLike | None = None) -> Path | None:
+    """Load `<project>/.config/.env` into the environment.
+
+    Without this the `.config` directory is decorative: `resolve` reads
+    os.getenv, so a .env file nobody loads resolves to nothing and the failure
+    surfaces as an authentication error rather than a missing file.
+
+    An EXISTING environment variable always wins. That preserves the resolution
+    order this module documents -- CI injects secrets as environment variables,
+    and a file checked out beside the specs must not silently override what the
+    runner set. It also means `SERVICENOW_USER=x python deploy.py` behaves the
+    way anyone would expect.
+
+    Returns the file it loaded, or None. Missing is not an error: a project
+    resolving everything from the environment has no .env at all.
+    """
+    roots: list[Path] = []
+    if project is not None:
+        roots.append(Path(project))
+    elif os.getenv("FABRIC_PROJECT"):
+        roots.append(Path(os.environ["FABRIC_PROJECT"]))
+    else:
+        # Walk up from the working directory so a script run from inside a
+        # project folder finds that project's secrets rather than none.
+        here = Path.cwd()
+        roots.extend([here, *here.parents])
+
+    for root in roots:
+        path = root / CONFIG_DIR / ENV_FILENAME
+        if not path.is_file():
+            continue
+
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            # `export FOO=bar` is common in hand-written .env files.
+            if key.startswith("export "):
+                key = key[len("export "):].strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+        return path
+
+    return None
 
 
 def _env_candidates(name: str) -> list[str]:
@@ -95,6 +153,13 @@ def resolve(reference: str, *, required: bool = True) -> str | None:
         return reference
     if reference in _cache:
         return _cache[reference]
+
+    # Lazily, once per process. Doing it on import would run before a caller
+    # had a chance to chdir into the project or set FABRIC_PROJECT.
+    global _env_loaded
+    if not _env_loaded:
+        _env_loaded = True
+        load_project_env()
 
     env_match = ENV.match(reference)
     if env_match:

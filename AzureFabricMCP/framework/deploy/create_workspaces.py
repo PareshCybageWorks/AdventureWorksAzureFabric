@@ -61,8 +61,21 @@ def main() -> int:
     args = parser.parse_args()
 
     project = Path(args.project).resolve()
-    spec_path = project / "specs" / "01-environments.yaml"
-    environments = yaml.safe_load(spec_path.read_text(encoding="utf-8"))
+
+    # Resolve through _project, not by reading a path directly.
+    #
+    # This script hard-coded specs/01-environments.yaml, which is the LEGACY
+    # layout. _project exists to resolve either layout new-first, and its own
+    # docstring says every deploy script goes through it -- this one did not,
+    # so a project scaffolded by the current new_project.py (which creates
+    # fabric/, powerbi/, dataops/, cicd/ and no specs/) could not be
+    # provisioned at all. It failed with FileNotFoundError naming a file the
+    # scaffolder has never produced, which reads like a corrupt project rather
+    # than a stale script.
+    from _project import load_scaffolding
+
+    environments, layout = load_scaffolding(project)
+    print(f"spec     {layout}")
 
     renames = {}
     for pair in args.rename_from:

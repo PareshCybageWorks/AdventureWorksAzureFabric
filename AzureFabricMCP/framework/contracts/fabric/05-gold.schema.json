@@ -349,6 +349,11 @@
                 "scd2_as_of": {
                   "type": "string",
                   "description": "Enables point-in-time lookup: the fact joins the dimension version current WHEN THE EVENT HAPPENED, not the version current today. That is the difference between revenue by the region a customer was in when they bought and the region they are in now."
+                },
+                "optional": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "The key has no value for some rows BY DESIGN, and resolving to the unknown member is correct rather than a defect.\n\nRole-playing dates on an event that may not have happened are the usual case: an incident that is still open has no resolved date, an order not yet shipped has no ship date. The row is complete; the event simply has not occurred.\n\nWithout this, assert_not_null and assert_keys_resolve are emitted over EVERY key, and a fact where most rows are legitimately unresolved fails both -- which looks like broken lookups rather than an open ticket backlog.\n\nOptional keys are still resolved and still land on the unknown member; they are only excluded from the two assertions that would otherwise treat 'has not happened yet' as an error."
                 }
               }
             }

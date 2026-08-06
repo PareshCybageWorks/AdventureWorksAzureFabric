@@ -588,8 +588,23 @@ def silver_notebook(platform: dict, table: dict, defaults: dict) -> dict:
         f'    .withColumn("_load_id", F.lit(load_id)))\n'
         f'\n'
         f'rows_out = out.count()\n'
-        f'out.write.mode("{write_mode}").format("delta").saveAsTable("{target}")\n'
-        f'dq.record_output(rows_out)\n'
+        # overwriteSchema, matching the quarantine write immediately below.
+        #
+        # Silver is declared fully rebuildable from bronze and writes with
+        # mode=overwrite, so its schema is expected to follow the spec. Without
+        # this option Delta refuses any write whose schema differs from the
+        # existing table, so the FIRST run after a spec adds or removes a
+        # column fails -- with a schema-mismatch error inside Spark that Fabric
+        # surfaces only as "session failed".
+        #
+        # The quarantine table beside it already set this; the table everyone
+        # actually reads did not, which is why the inconsistency went unnoticed
+        # until a column was added.
+        + (f'out.write.mode("{write_mode}").option("overwriteSchema", "true") \\\n'
+           f'    .format("delta").saveAsTable("{target}")\n'
+           if write_mode == "overwrite" else
+           f'out.write.mode("{write_mode}").format("delta").saveAsTable("{target}")\n')
+        + f'dq.record_output(rows_out)\n'
         f'print(f"wrote {{rows_out:,}} rows to {target}")\n'
         f'\n'
         f'if quarantine is not None:\n'
@@ -660,8 +675,29 @@ def gold_dimension_notebook(platform: dict, dim: dict) -> dict:
             f'    end_date="{gen.get("end_date")}",\n'
             f'    fiscal_year_start_month={gen.get("fiscal_year_start_month", 1)},\n'
             f')\n'
-            f'gold.write(out, "{name}")\n'
         ))
+
+        # Business rules apply here too.
+        #
+        # This branch used to return before reaching the shared business_rules
+        # loop below, so a rule declared on a generated dimension was accepted
+        # by the contract, described in the notebook's own markdown header, and
+        # then never emitted. The column simply did not exist -- and because
+        # nothing downstream validates a DAX measure against real gold columns,
+        # the first sign of it was a semantic model returning blank.
+        #
+        # A calendar is exactly where derived columns belong: is_working_day
+        # and a standard-hours capacity are the denominators most utilization
+        # measures divide by.
+        for br in dim.get("business_rules", []):
+            expression = " ".join(br["expression"].split())
+            cells.append(code_cell(
+                f'# Business rule: {br["name"]}\n'
+                f'# {br.get("description", "").strip()}\n'
+                f'out = out.withColumn("{br["target"]}", F.expr("""{expression}"""))\n'
+            ))
+
+        cells.append(code_cell(f'gold.write(out, "{name}")\n'))
         return notebook(cells, default_lakehouse="lh_silver", known_lakehouses=["lh_silver"])
 
     source = dim["source"].replace("silver.", "")
@@ -844,6 +880,36 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
         d["name"]: d.get("surrogate_key") for d in gold.get("dimensions", [])
     }
 
+    # Business rules FIRST, then the dimension lookups.
+    #
+    # A dimension key is frequently DERIVED: `opened_date_key` is
+    # CAST(opened_at AS date), computed here, and then used as the `lookup_on`
+    # for dim_date. Emitting the lookups first meant joining on a column that
+    # did not exist yet.
+    #
+    # The reverse dependency does not occur: a business rule computes a fact
+    # attribute from its own source columns, never from a surrogate key it has
+    # not been given. The reference project has none, and one would be a
+    # different construct anyway -- a rule reading `customer_sk` is asking for
+    # a dimension attribute, which belongs in a view.
+    #
+    # This failed only for facts whose date key is derived in GOLD. A project
+    # that derives it in SILVER, as the reference one does, never sees it --
+    # which is why the ordering survived.
+    for br in fact.get("business_rules", []):
+        expression = " ".join(br["expression"].split())
+        provisional = br.get("provisional")
+        warning = (
+            "# PROVISIONAL -- placeholder logic, not real business data.\n"
+            "# Replace before this measure informs a decision.\n" if provisional else ""
+        )
+        cells.append(code_cell(
+            f'# Business rule: {br["name"]}\n'
+            f'{warning}'
+            f'# {" ".join(br.get("description", "").split())}\n'
+            f'df = df.withColumn("{br["target"]}", F.expr("""{expression}"""))\n'
+        ))
+
     for key in fact.get("dimension_keys", []):
         as_of = key.get("scd2_as_of")
         cells.append(code_cell(
@@ -862,20 +928,6 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
               f'    dimension_surrogate_key="{dim_surrogate_keys.get(key["dimension"], key["target"])}",\n'
             + (f'    as_of_column="{as_of}",\n' if as_of else '')
             + f')\n'
-        ))
-
-    for br in fact.get("business_rules", []):
-        expression = " ".join(br["expression"].split())
-        provisional = br.get("provisional")
-        warning = (
-            "# PROVISIONAL -- placeholder logic, not real business data.\n"
-            "# Replace before this measure informs a decision.\n" if provisional else ""
-        )
-        cells.append(code_cell(
-            f'# Business rule: {br["name"]}\n'
-            f'{warning}'
-            f'# {" ".join(br.get("description", "").split())}\n'
-            f'df = df.withColumn("{br["target"]}", F.expr("""{expression}"""))\n'
         ))
 
     # ---- measure renames -------------------------------------------------
@@ -900,9 +952,27 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
     measures = [m["target"] for m in fact.get("measures", [])]
     degenerate = [d["target"] for d in fact.get("degenerate_dimensions", [])]
     keys = [k["target"] for k in fact.get("dimension_keys", [])]
+    # Keys that must resolve. An `optional: true` key has no value for some
+    # rows by design -- an open incident has no resolved date -- so landing on
+    # the unknown member is correct there, not a defect. Asserting over it
+    # reports an open backlog as a broken lookup.
+    required_keys = [k["target"] for k in fact.get("dimension_keys", [])
+                     if not k.get("optional")]
     rules = [b["target"] for b in fact.get("business_rules", [])]
     flags = [f["target"] for f in fact.get("quality_flags", [])]
-    final = degenerate + keys + measures + rules + flags
+
+    # Deduplicated, preserving order.
+    #
+    # A measure whose `target` matches a business rule's `target` -- which is
+    # the natural way to write "this rule computes this measure" -- listed the
+    # column twice. `df.select` then produces two columns with the same name,
+    # and the Delta write fails on the duplicate. The failure surfaces as a
+    # Spark statement error with no mention of the column, so it reads as a
+    # data problem rather than a spec one.
+    final: list[str] = []
+    for column in degenerate + keys + measures + rules + flags:
+        if column not in final:
+            final.append(column)
 
     cells.append(code_cell(
         f'# ---- Write -------------------------------------------------------\n'
@@ -920,14 +990,31 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
         assertions = "".join(
             f'#   {t["id"]}: {" ".join(t["description"].split())}\n' for t in tests
         )
-        # The grain is whichever degenerate dimension the spec declares unique.
+        # The grain is whatever the spec DECLARES unique -- and only that.
         grain_test = next(
             (t for t in tests if t.get("assertion", "").startswith("unique(")), None
         )
-        grain_columns = (
-            [grain_test["assertion"][len("unique("):-1].strip()] if grain_test
-            else [d["target"] for d in fact.get("degenerate_dimensions", [])][-1:]
-        )
+        if grain_test:
+            # Split on commas: `unique(user_sk, week_start_date_sk)` is a
+            # COMPOSITE grain. Taking the whole string as one name produced a
+            # column literally called "user_sk, week_start_date_sk", which
+            # resolves against nothing.
+            inner = grain_test["assertion"][len("unique("):].rstrip(")")
+            grain_columns = [c.strip() for c in inner.split(",") if c.strip()]
+        else:
+            # No uniqueness assertion is emitted when the spec declares none.
+            #
+            # This used to fall back to "assert the LAST degenerate dimension
+            # is unique", which is a guess, not a grain. A degenerate dimension
+            # is an attribute carried on the fact -- a priority, a stage, a free
+            # text message -- and there is no reason for it to be unique.
+            #
+            # It failed exactly as you would expect: fct_outage asserted
+            # `outage_message` unique across 427 outages and fct_ticket_sla
+            # asserted `sla_stage`. Both raise inside Spark, which Fabric
+            # reports only as "session failed", so a fact with a perfectly good
+            # grain looked like a data problem.
+            grain_columns = []
 
         # Reconciliation back to the source measure. Declared in the spec as
         # GOLD-RECON-001; previously only a comment, which meant the one check
@@ -968,13 +1055,18 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
             f'from ttfabric.quality import (assert_unique, assert_not_null,\n'
             f'                         assert_keys_resolve, assert_reconciles)\n'
             f'\n'
-            f'assert_unique(out, {grain_columns!r})\n'
-            f'assert_not_null(out, {keys!r})\n'
+            + (f'assert_unique(out, {grain_columns!r})\n' if grain_columns else
+               f'# No uniqueness assertion: the spec declares no unique() test\n'
+               f'# for this fact. Guessing one is worse than omitting it.\n')
+            + f'assert_not_null(out, {required_keys!r})\n'
             f'\n'
             f'# not_null is not enough: a failed lookup yields the unknown-member\n'
             f'# key, not a null, so a fact table with every key unresolved passes\n'
             f'# a not-null check while reporting everything against "Unknown".\n'
-            f'assert_keys_resolve(out, {keys!r})\n'
+            f'#\n'
+            f'# Optional keys are excluded: an event that has not happened has\n'
+            f'# no date, and the unknown member is the correct destination.\n'
+            f'assert_keys_resolve(out, {required_keys!r})\n'
             f'{recon}'
             f'\n'
             f'dq.record_input(out.count())\n'

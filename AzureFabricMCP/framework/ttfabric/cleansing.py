@@ -193,9 +193,27 @@ def apply_transforms(df: DataFrame, ctx: RuleContext, columns: list[dict]) -> Ru
 
     for col in columns:
         expression = col.get("expression")
+        if not expression:
+            continue
+
         # Cross-table expressions are handled by dedicated rules, not here.
-        if expression and "(" in expression and "where" not in expression:
-            out = out.withColumn(col["target"], F.expr(expression))
+        # `count(order_items where order_id = this.order_id)` names another
+        # table, which F.expr cannot resolve against a single DataFrame.
+        if "where" in expression:
+            continue
+
+        # The previous guard ALSO required "(" in the expression, as a proxy
+        # for "looks like a function call". It silently skipped every valid
+        # expression without parentheses -- `bytes_in + bytes_out`,
+        # `span_type = 'exclude'`, a bare CASE WHEN -- and the column simply
+        # never appeared.
+        #
+        # That failure is invisible at the point it happens. It surfaces later
+        # either as a rule referencing a column that does not exist, or worse,
+        # as a measure quietly reading nothing. A declared expression is a
+        # statement that the column should exist; there is no reason a
+        # parenthesis should decide it.
+        out = out.withColumn(col["target"], F.expr(expression))
 
     return RuleResult(kept=out, rejected=_empty_like(out))
 

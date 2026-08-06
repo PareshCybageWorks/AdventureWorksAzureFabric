@@ -141,6 +141,33 @@ def main() -> int:
     items.raise_for_status()
     all_items = items.json().get("value", [])
 
+    # A Report is DEPLOYED under its `display_name`, not its spec `name`.
+    #
+    # P2 declares both -- `name: rpt_itsm_operations` for the naming convention
+    # and `display_name: ITSM Operations` for the people who open it -- and
+    # push_reports uses the display name. So a folder entry written against
+    # `naming.report` (rpt_*), which is what F1 declares the convention to be,
+    # matched nothing and the report stayed at the workspace root.
+    #
+    # Resolving the deployed name back to the spec name lets a folder be
+    # declared in the framework's own convention rather than against whatever
+    # prose someone chose for the title.
+    spec_names: dict[str, str] = {}
+    try:
+        reports = load_spec(project, "reports", track="powerbi") or {}
+    except (FileNotFoundError, KeyError):
+        reports = {}          # a project without reports is fine
+    for entry in reports.get("reports", []) or []:
+        if entry.get("display_name") and entry.get("name"):
+            spec_names[entry["display_name"]] = entry["name"]
+
+    def name_matches(item: dict, pattern: str) -> bool:
+        deployed = item["displayName"]
+        if fnmatch.fnmatch(deployed, pattern):
+            return True
+        alias = spec_names.get(deployed)
+        return bool(alias and fnmatch.fnmatch(alias, pattern))
+
     # An item's current folder is not returned by the list call, so a move is
     # issued regardless; the API is idempotent for an item already in place.
     moved = already = missing = failed = 0
@@ -153,7 +180,7 @@ def main() -> int:
             continue
 
         matches = [i for i in all_items
-                   if i["type"] == item_type and fnmatch.fnmatch(i["displayName"], pattern)]
+                   if i["type"] == item_type and name_matches(i, pattern)]
         if not matches:
             print(f"  NO ITEM    {item_type} {pattern}  (nothing matches)")
             missing += 1

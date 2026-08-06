@@ -7,6 +7,11 @@ what a task needs, rather than reading the tree.
 No project data ever lives here.
 **Project = design only.** Filled-in specs under `<project>/{fabric,powerbi,dataops,cicd}/`.
 
+> **Paths below are relative to the framework root** — the `AzureFabricMCP/`
+> directory, not the repository root. Projects sit beside it, so from the
+> repository root every command gains an `AzureFabricMCP/` prefix:
+> `python AzureFabricMCP/framework/generators/validate.py --project 02_demo-servicenow`.
+
 ---
 
 ## Starting a new project
@@ -62,7 +67,8 @@ framework/
 ├── generators/   spec -> notebooks / pipelines / DDL / TMDL / PBIR
 ├── tests/        verdict logic, runs without Spark or pytest
 ├── deploy/       artefact -> Fabric (REST + OneLake DFS)
-└── tools/        sample data, dry run, warehouse + model queries
+└── tools/        sample data, dry run, REST extract, warehouse + model
+                  queries, notebook run/diagnose/drop helpers
 ```
 
 Skills live at the repo root in `../skills/<track>/`, not under `framework/`.
@@ -124,10 +130,25 @@ python framework/deploy/connect_git.py       --project <p> --env dev   # optiona
 
 # test (no Spark, no pytest)
 python framework/tests/test_monitoring.py
+python framework/tests/test_validator_catches.py   # proves validate.py FAILS on real defects
 
 # run without Fabric (fast spec check against real data)
 python framework/tools/dryrun.py --project <p>
+
+# extract a REST source into landing CSVs (spec-driven; full snapshot)
+python framework/tools/extract_rest.py --project <p>
+
+# when something fails in Fabric
+python framework/tools/run_notebooks.py      --project <p> --env dev nb_x [nb_y ...]
+python framework/tools/diagnose_notebook.py  --project <p> --env dev nb_x
+python framework/tools/drop_tables.py        --project <p> --env dev --item wh_gold fct_x
 ```
+
+**A failed notebook reports one sentence** — `System cancelled the Spark
+session due to statement execution failures` — for a wrong column, a failed
+assertion, a schema mismatch and a capacity eviction alike. Re-run it ALONE
+first: if it passes, it was contention. If it fails, use
+`diagnose_notebook.py`. See `LEARNINGS.md`.
 
 ## Runtime library
 

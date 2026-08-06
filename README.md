@@ -58,7 +58,7 @@ AzureFabricMCP/          THIS repository, cloned under that name
 repository and pins a framework tag; none of them contain framework code, and
 this repository contains no project data.
 
-Start with [`framework/INDEX.md`](framework/INDEX.md)
+Start with [`AzureFabricMCP/framework/INDEX.md`](AzureFabricMCP/framework/INDEX.md)
 — it maps the whole framework in one screen so you can open only what a task
 needs.
 
