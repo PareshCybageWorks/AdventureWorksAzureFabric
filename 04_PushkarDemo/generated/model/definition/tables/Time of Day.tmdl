@@ -1,0 +1,30 @@
+/// Minute of day, 0-1439, carrying the hour it falls in.
+table 'Time of Day'
+	lineageTag: e14f2077-1bd9-52da-9341-46ca9b33d12a
+
+	column 'Minute of Day'
+		dataType: int64
+		isHidden
+		sourceColumn: time_key
+		summarizeBy: none
+		lineageTag: b7156cc8-11d3-5ad1-a629-decd306071ec
+
+	column Hour
+		dataType: int64
+		sourceColumn: hour_of_day
+		summarizeBy: none
+		lineageTag: c1113c6d-8a1c-5535-88ff-8aea22e4e123
+
+	column time_sk
+		dataType: int64
+		isHidden
+		sourceColumn: time_sk
+		summarizeBy: none
+		lineageTag: 68eefb84-4cee-58bd-97de-36e03d3ae1ef
+
+	partition 'Time of Day' = entity
+		mode: directLake
+		source
+			entityName: dim_time
+			schemaName: dbo
+			expressionSource: DatabaseQuery

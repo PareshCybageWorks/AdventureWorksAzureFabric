@@ -1,0 +1,108 @@
+/// Calendar, whole years. Days outside 2025-11-01..2026-02-12 are generated padding with null attributes -- they exist so time intelligence resolves, not to be counted.
+table Date
+	lineageTag: beb64811-bca6-5ad9-bb49-9ca93acb176b
+	dataCategory: Time
+
+	column Date
+		dataType: dateTime
+		sourceColumn: full_date
+		summarizeBy: none
+		formatString: mm/dd/yyyy
+		lineageTag: d17e3224-c73f-52c9-86bc-36527e25a8bb
+		isKey
+
+	column Year
+		dataType: int64
+		sourceColumn: year_number
+		summarizeBy: none
+		lineageTag: 25fede9a-9515-5a09-bc0f-b5f25e81878a
+
+	column 'Quarter Number'
+		dataType: int64
+		isHidden
+		sourceColumn: quarter_number
+		summarizeBy: none
+		lineageTag: 43ee1912-da07-51ee-8a50-9060c05e9b26
+
+	column 'Month Number'
+		dataType: int64
+		isHidden
+		sourceColumn: month_number
+		summarizeBy: none
+		lineageTag: e1bb42c9-1116-5d2a-83e0-d20389e474f4
+
+	column Month
+		dataType: string
+		sourceColumn: month_name
+		summarizeBy: none
+		sortByColumn: 'Month Number'
+		lineageTag: 52bdc0a5-4fd9-586f-96eb-d9487072dc9f
+
+	column 'Year Month'
+		dataType: int64
+		isHidden
+		sourceColumn: year_month
+		summarizeBy: none
+		lineageTag: 772a6f3b-9ce1-575b-9134-01fa8099c17d
+
+	column 'Day of Week'
+		dataType: string
+		sourceColumn: day_name
+		summarizeBy: none
+		sortByColumn: 'Day of Week Number'
+		lineageTag: 3d41722d-0479-5fff-9434-317f48ea54c8
+
+	column 'Day of Week Number'
+		dataType: int64
+		isHidden
+		sourceColumn: day_of_week
+		summarizeBy: none
+		lineageTag: dc7ae247-c6b4-5562-a921-329f35f07410
+
+	column 'Is Work Day'
+		dataType: int64
+		sourceColumn: is_work_day
+		summarizeBy: none
+		lineageTag: 6902cd49-5324-5abd-839f-8426ea27c9d4
+
+	column 'Is Holiday'
+		dataType: int64
+		sourceColumn: day_is_holiday
+		summarizeBy: none
+		lineageTag: d3f690fd-3227-56e2-b1a3-33038e7bebd4
+
+	/// Recomputed against today on every run, not the frozen label the source carried
+	column 'Active Period'
+		dataType: string
+		sourceColumn: date_range
+		summarizeBy: none
+		lineageTag: 4bfec197-3be3-5c53-9d4d-3ac9d80b51a2
+
+	column date_sk
+		dataType: int64
+		isHidden
+		sourceColumn: date_sk
+		summarizeBy: none
+		lineageTag: f1ef7286-3f47-58b1-b8a9-7f92f946e907
+
+	hierarchy Calendar
+		lineageTag: af4a5198-bafd-583f-852c-215ce7383be6
+
+		level Year
+			lineageTag: dfefabb2-bd42-5b54-b19c-76d86d555437
+			column: Year
+
+		level 'Quarter Number'
+			lineageTag: f4629649-9bfe-558c-ab39-10d503fd0059
+			column: 'Quarter Number'
+
+		level Month
+			lineageTag: b99b2942-9b4f-508e-ab47-978ec50d0e1a
+			column: Month
+
+	partition Date = entity
+		mode: directLake
+		source
+			entityName: dim_date
+			schemaName: dbo
+			expressionSource: DatabaseQuery

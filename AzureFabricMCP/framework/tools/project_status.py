@@ -73,10 +73,30 @@ def strip_comments(text: str) -> str:
     return "\n".join(out)
 
 
-def placeholders(path: Path) -> list[str]:
+def placeholders(path: Path, template: Path | None = None) -> list[str]:
+    """Placeholder tokens still to fill in.
+
+    Only tokens the TEMPLATE also carries count. Stripping comments is not
+    enough: a filled spec may legitimately write `<something>` inside a prose
+    value, and angle brackets are ordinary punctuation in English.
+
+    That happened. A finished silver spec explained that a rule keeps the
+    original "as <column>_source", and this reported the stage as unfilled with
+    "1 to fill: <column>" -- so a completed stage could not be marked done
+    without rewording its own documentation. Comparing against the template
+    makes the test what it always meant: is any of the TEMPLATE still showing
+    through.
+    """
     text = strip_comments(path.read_text(encoding="utf-8"))
+    known: set[str] | None = None
+    if template and template.exists():
+        known = set(PLACEHOLDER.findall(strip_comments(
+            template.read_text(encoding="utf-8"))))
+
     seen: list[str] = []
     for token in PLACEHOLDER.findall(text):
+        if known is not None and token not in known:
+            continue
         if token not in seen:
             seen.append(token)
     return seen
@@ -101,7 +121,8 @@ def assess(project: Path) -> list[dict]:
         if not path.exists():
             state, remaining = "missing", []
         else:
-            remaining = placeholders(path)
+            remaining = placeholders(
+                path, FRAMEWORK / "templates" / track / f"{stage}.yaml")
             state = "template" if remaining else "filled"
 
         stages.append({"stage": label, "track": track, "name": stage,
@@ -169,8 +190,8 @@ def main() -> int:
         print(f"  Fix these before generating. Validation is authoritative.")
     else:
         print("  All stages filled and validation passes. Ready to generate:")
-        print(f"    python framework/generators/validate.py --project {project.name}")
-        print(f"    python framework/tools/dryrun.py       --project {project.name}")
+        print(f"    python AzureFabricMCP/framework/generators/validate.py --project {project.name}")
+        print(f"    python AzureFabricMCP/framework/tools/dryrun.py       --project {project.name}")
     return 0
 
 

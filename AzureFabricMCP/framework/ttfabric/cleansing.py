@@ -571,6 +571,221 @@ def add_record_hash(
 
 
 # ---------------------------------------------------------------------------
+# Structural defects
+# ---------------------------------------------------------------------------
+# The rules above all repair or reject VALUES. These five deal with defects in
+# the SHAPE of a table -- a grain that is not what everyone assumes, an array
+# stuffed into a text column, a calendar too short for time intelligence, a
+# flag computed once and never again, a reference table missing a side. None
+# of them could be expressed with the value rules without lying about what
+# they do: pointing `deduplicate` at a legitimate re-entry would destroy real
+# events to make a count look tidy.
+
+def assert_grain(
+    df: DataFrame, ctx: RuleContext, columns: list[str], allow_duplicates: bool = False
+) -> RuleResult:
+    """Assert the table's grain, WITHOUT deduplicating it.
+
+    The distinction this exists for: a repeated combination is sometimes a
+    duplicate record and sometimes a real repeated event. Badge reads are the
+    second kind -- one person entering one building twice in a day is two
+    genuine arrivals, and deduplicating them would delete real entries to make
+    a headcount look tidy.
+
+    With `allow_duplicates` false the rule behaves like a constraint and
+    quarantines the repeats. With it true the rule rejects nothing and only
+    RECORDS how far the data is from one row per combination, so the number is
+    visible in the run stats instead of being discovered by a measure that
+    quietly double-counts.
+    """
+    key = [F.col(c) for c in columns]
+    counts = df.groupBy(*key).agg(F.count(F.lit(1)).alias("_grain_n"))
+    repeated = counts.filter(F.col("_grain_n") > 1)
+    repeated_groups = repeated.count()
+    excess = repeated.agg(
+        F.coalesce(F.sum(F.col("_grain_n") - F.lit(1)), F.lit(0))
+    ).collect()[0][0]
+
+    stats = {
+        "grain": ", ".join(columns),
+        "repeated_groups": repeated_groups,
+        "rows_above_grain": int(excess or 0),
+        "enforced": not allow_duplicates,
+    }
+
+    if allow_duplicates:
+        return RuleResult(kept=df, rejected=_empty_like(df), stats=stats)
+
+    marked = df.join(repeated.select(*key, F.lit(True).alias("_over_grain")), columns, "left")
+    kept = marked.filter(F.col("_over_grain").isNull()).drop("_over_grain")
+    over = marked.filter(F.col("_over_grain").isNotNull()).drop("_over_grain")
+    rejected = _tag_rejects(
+        over, ctx, "assert_grain",
+        f"more than one row per ({', '.join(columns)})",
+    )
+    return RuleResult(kept=kept, rejected=rejected, stats=stats)
+
+
+def explode_json_array(
+    df: DataFrame, ctx: RuleContext, column: str, into: str,
+    element_type: str = "string", drop_source: bool = False,
+) -> RuleResult:
+    """Expand a JSON array held in a text column into one row per element.
+
+    A star schema cannot join on an array. Left as text, "[1, 2, 3]" compares
+    as a string and matches nothing -- and because a failed join yields null
+    rather than an error, the result looks like missing data rather than a
+    type mistake.
+
+    Rejects nothing, but note this rule CHANGES THE ROW COUNT upward, which is
+    the one place the layer identity `count(in) == count(kept) + count(rejected)`
+    does not hold. That is deliberate and has to be: a persona scoped to five
+    buildings genuinely is five facts. Declare it after any rule that counts
+    rows, and reconcile the exploded table against its parent by distinct
+    parent key rather than by row count.
+
+    A null or empty array yields ONE row with a null element, not zero rows.
+    Dropping the row would silently delete a persona whose scope is
+    unpopulated -- exactly the under-scoping that makes an RLS bug invisible.
+    """
+    caster = {
+        "string": StringType(), "integer": IntegerType(), "long": LongType(),
+    }.get(element_type)
+    if caster is None:
+        raise ValueError(
+            f"Unknown element_type {element_type!r} for explode_json_array on "
+            f"{column!r}. Use string, integer or long."
+        )
+
+    parsed = F.from_json(F.col(column), f"array<{element_type}>")
+    out = df.withColumn("_json_elements", parsed)
+    out = out.withColumn(
+        "_json_elements",
+        F.when(
+            F.col("_json_elements").isNull() | (F.size(F.col("_json_elements")) == 0),
+            F.array(F.lit(None).cast(caster)),
+        ).otherwise(F.col("_json_elements")),
+    )
+    out = out.withColumn(into, F.explode(F.col("_json_elements"))).drop("_json_elements")
+    if drop_source:
+        out = out.drop(column)
+
+    return RuleResult(
+        kept=out, rejected=_empty_like(out),
+        stats={"exploded": column, "into": into, "rows_out": None},
+    )
+
+
+def extend_calendar(
+    df: DataFrame, ctx: RuleContext, date_column: str, key_column: str,
+    to_full_years: bool = True, start: str | None = None, end: str | None = None,
+) -> RuleResult:
+    """Extend a date dimension to cover whole calendar years.
+
+    Power BI time intelligence -- SAMEPERIODLASTYEAR, DATEADD, TOTALYTD --
+    requires a contiguous date table spanning full years. Given a partial one
+    those functions return BLANK rather than raising, so every year-over-year
+    tile renders empty and reads as a data gap rather than a modelling fault.
+    That is the most expensive kind of defect: it looks like someone else's
+    problem.
+
+    Generated rows carry `_is_generated = true` so a report can tell a real
+    calendar day from padding, and every non-key attribute is left null rather
+    than guessed -- inventing is_work_day for a day nobody classified would
+    put a fabricated working-day count into a denominator.
+    """
+    bounds = df.agg(F.min(date_column).alias("lo"), F.max(date_column).alias("hi")).collect()[0]
+    lo = start or f"{bounds['lo'].year}-01-01"
+    hi = end or (f"{bounds['hi'].year}-12-31" if to_full_years else str(bounds["hi"]))
+
+    spine = (
+        ctx.spark.sql(f"SELECT explode(sequence(DATE'{lo}', DATE'{hi}', INTERVAL 1 DAY)) AS {date_column}")
+        .withColumn(key_column, F.date_format(F.col(date_column), "yyyyMMdd").cast(IntegerType()))
+    )
+
+    existing = df.withColumn("_is_generated", F.lit(False))
+    missing = (
+        spine.join(df.select(key_column), key_column, "left_anti")
+        .withColumn("_is_generated", F.lit(True))
+    )
+    # Every column the real table has, nulled on generated rows, so the two
+    # frames union by name rather than by position.
+    for column in existing.columns:
+        if column not in missing.columns:
+            missing = missing.withColumn(column, F.lit(None).cast(existing.schema[column].dataType))
+
+    out = existing.unionByName(missing.select(existing.columns))
+    return RuleResult(
+        kept=out, rejected=_empty_like(out),
+        stats={"calendar_from": lo, "calendar_to": hi, "generated_rows": missing.count()},
+    )
+
+
+def recompute_activity_flags(
+    df: DataFrame, ctx: RuleContext, key: str, event_table: str, event_key: str,
+    event_date_column: str, windows: dict[str, int], as_of: str | None = None,
+) -> RuleResult:
+    """Recompute "active in the last N days" flags from the event table.
+
+    A flag of this shape is computed once, at extract time, and is then wrong
+    every day afterwards. The failure is quiet in a particular way: some of the
+    windows keep varying while others saturate to a single value, so three of
+    four options behave and the fourth silently reports everyone as active.
+
+    `windows` maps target column to day count, e.g.
+    {"is_active_in_last_30_days": 30}. The original value is retained beside it
+    as `<column>_source` so a disagreement between the source's answer and ours
+    stays visible rather than being overwritten.
+    """
+    events = ctx.resolve_table(event_table)
+    anchor = F.lit(as_of).cast(DateType()) if as_of else F.lit(None).cast(DateType())
+    if as_of is None:
+        anchor = events.agg(F.max(F.col(event_date_column))).collect()[0][0]
+        anchor = F.lit(anchor).cast(DateType())
+
+    out = df
+    for column, days in windows.items():
+        recent = (
+            events
+            .filter(F.col(event_date_column) > F.date_sub(anchor, days))
+            .select(F.col(event_key).alias("_event_key")).distinct()
+            .withColumn("_active", F.lit(1))
+        )
+        out = out.join(recent, out[key] == F.col("_event_key"), "left").drop("_event_key")
+        if column in df.columns:
+            out = out.withColumnRenamed(column, f"{column}_source")
+        out = out.withColumn(column, F.coalesce(F.col("_active"), F.lit(0))).drop("_active")
+
+    return RuleResult(
+        kept=out, rejected=_empty_like(out),
+        stats={"recomputed": sorted(windows), "against": event_table},
+    )
+
+
+def flag_incomplete_reference(
+    df: DataFrame, ctx: RuleContext, required_columns: list[str], flag: str = "_reference_incomplete",
+) -> RuleResult:
+    """Mark a reference table that cannot do the job its name claims.
+
+    A bridge with only one side, or a dimension with a key and no attributes,
+    is not wrong row by row -- every row is fine. It is structurally unable to
+    resolve what it exists to resolve, and that has to be recorded somewhere a
+    later modeller will actually look. Without it, a many-to-many is designed
+    against a bridge that cannot express one, and the discovery happens after
+    the relationship is drawn.
+
+    Rejects nothing. Quarantining every row would be wrong: the rows are the
+    only thing the table does have.
+    """
+    missing = [c for c in required_columns if c not in df.columns]
+    out = df.withColumn(flag, F.lit(bool(missing)))
+    return RuleResult(
+        kept=out, rejected=_empty_like(out),
+        stats={"missing_columns": missing, "complete": not missing},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
 # The bridge between spec and code. validate_specs.py checks that every `fn:`
@@ -593,6 +808,13 @@ REGISTRY: dict[str, Callable[..., RuleResult]] = {
     "recompute_total_from_lines": recompute_total_from_lines,
     "recompute_items_count": recompute_items_count,
     "mask_pii": mask_pii,
+    # Structural defects -- shape rather than values. See the section above for
+    # why none of these could be folded into an existing rule.
+    "assert_grain": assert_grain,
+    "explode_json_array": explode_json_array,
+    "extend_calendar": extend_calendar,
+    "recompute_activity_flags": recompute_activity_flags,
+    "flag_incomplete_reference": flag_incomplete_reference,
     "add_record_hash": add_record_hash,
 }
 

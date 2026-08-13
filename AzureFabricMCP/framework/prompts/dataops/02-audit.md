@@ -71,9 +71,9 @@ D2 makes it a table.
 ## Then
 
 ```bash
-python framework/generators/validate.py       --project <p> --track dataops
-python framework/generators/generate_audit.py --specs   <p> --out <p>/generated/notebooks
-python framework/deploy/push_items.py         --project <p> --env dev --create-missing
+python AzureFabricMCP/framework/generators/validate.py       --project <p> --track dataops
+python AzureFabricMCP/framework/generators/generate_audit.py --specs   <p> --out <p>/generated/notebooks
+python AzureFabricMCP/framework/deploy/push_items.py         --project <p> --env dev --create-missing
 ```
 
 `nb_build_audit` runs last in `p_build_gold`, after the tables and views it

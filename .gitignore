@@ -5,6 +5,9 @@
 # ignored rather than absent. The framework must not carry project data --
 # that separation is the point of the split.
 01_demo-project/
+02_demo-servicenow/
+03_live_demo/
+04_Puskar_demo/
 
 __pycache__/
 *.pyc

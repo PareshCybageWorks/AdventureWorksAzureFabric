@@ -29,7 +29,7 @@ step with the specs.
 **Always start by asking where you are:**
 
 ```bash
-python framework/tools/project_status.py --project <name>
+python AzureFabricMCP/framework/tools/project_status.py --project <name>
 ```
 
 That works on a project you have never seen, in a session that has lost all
@@ -122,7 +122,7 @@ For each stage in order:
    loses the reason each field exists.
 4. **Validate before moving on:**
    ```bash
-   python framework/generators/validate.py --project <name>
+   python AzureFabricMCP/framework/generators/validate.py --project <name>
    ```
 5. **Check the stage's own exit gate.** Each prompt has one. It lists the
    conditions under which you must refuse to proceed — honour them, including
@@ -181,9 +181,9 @@ it in a summary of one.
 ## When every stage is filled
 
 ```bash
-python framework/tools/project_status.py --project <name>     # confirms ready
-python framework/generators/validate.py  --project <name>
-python framework/tools/dryrun.py         --project <name>     # no Fabric needed
+python AzureFabricMCP/framework/tools/project_status.py --project <name>     # confirms ready
+python AzureFabricMCP/framework/generators/validate.py  --project <name>
+python AzureFabricMCP/framework/tools/dryrun.py         --project <name>     # no Fabric needed
 ```
 
 `dryrun` runs the spec against real sample data without touching Fabric, so the

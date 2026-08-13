@@ -38,6 +38,12 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _specs import load as load_spec
 
+# Rules that legitimately CHANGE THE ROW COUNT upward. The silver layer
+# identity count(in) == count(kept) + count(rejected) does not hold across
+# these, by design rather than by defect. Kept in step with the same set in
+# tools/dryrun.py and with D2's `grain_changes`.
+ROW_MULTIPLYING_RULES = {"explode_json_array", "extend_calendar"}
+
 BANNER = (
     "GENERATED FILE -- DO NOT EDIT.\n"
     "Produced by framework/generators/generate_notebooks.py from the project "
@@ -464,14 +470,60 @@ def bronze_notebook(platform: dict, mapping: dict, entity: dict,
         for c in audit
     )
 
+    # A FULL snapshot must be idempotent per ingest_date, or a retry doubles it.
+    #
+    # This cost real data. Bronze is append -- the contract permits nothing else,
+    # because overwrite would destroy the replayable history that is the whole
+    # point of the layer. But `append` plus `load_pattern: full` means a
+    # pipeline that RETRIES a failed notebook lands a second complete snapshot,
+    # and the pipeline then reports success because the retry succeeded.
+    #
+    # It happened on the first real run of this framework against a contended
+    # capacity: four of fifteen bronze notebooks hit a Spark capacity limit,
+    # were retried by the pipeline, and each appended a second full copy.
+    # Nothing failed. It surfaced two layers later as a gold fan-out --
+    # "2,000 fact rows became 4,000" -- blamed on the dimension.
+    #
+    # Dynamic partition overwrite replaces only the partitions the DataFrame
+    # actually carries, so a re-run of today replaces today and leaves every
+    # earlier ingest_date untouched. History across dates is preserved; a retry
+    # within a date is idempotent.
+    partition_by = defaults.get("partition_by") or []
+    write_mode = defaults.get("write_mode", "append")
+    full_snapshot = mapping.get("load_pattern") == "full" and "ingest_date" in partition_by
+
+    if full_snapshot:
+        write_cell = (
+            f'# `ingest_date` is the partition a full snapshot owns. Stamped\n'
+            f'# here rather than read from the landing path, so a re-run on the\n'
+            f'# same day targets the same partition.\n'
+            f'out = out.withColumn("ingest_date", F.current_date())\n'
+            f'\n'
+            f'# IDEMPOTENT per ingest_date. Not plain append: a pipeline retry\n'
+            f'# would otherwise land a second full snapshot and report success.\n'
+            f'# No `overwriteSchema` here. Delta rejects it outright in dynamic\n'
+            f'# partition overwrite mode -- DELTA_OVERWRITE_SCHEMA_WITH_DYNAMIC_\n'
+            f'# PARTITION_OVERWRITE -- and it would be wrong regardless: F3 sets\n'
+            f'# on_schema_drift: fail, so a changed source schema must STOP the\n'
+            f'# load rather than quietly rewrite the table around it.\n'
+            f'(out.write.mode("overwrite")\n'
+            f'    .option("partitionOverwriteMode", "dynamic")\n'
+            f'    .partitionBy("ingest_date")\n'
+            f'    .format("delta").saveAsTable("{target}"))\n'
+        )
+    else:
+        write_cell = (
+            f'out.write.mode("{write_mode}") \\\n'
+            f'    .format("delta").saveAsTable("{target}")\n'
+        )
+
     cells.append(code_cell(
         f'# ---- Audit columns and write -------------------------------------\n'
         f'# Injected from 00-platform.yaml `audit_columns.bronze`, so the\n'
         f'# provenance contract is identical across every entity.\n'
         f'out = (df\n{audit_lines})\n'
         f'\n'
-        f'out.write.mode("{defaults.get("write_mode", "append")}") \\\n'
-        f'    .format("delta").saveAsTable("{target}")\n'
+        f'{write_cell}'
         f'\n'
         f'dq.record_output(rows_in)\n'
         f'print(f"landed {{rows_in:,}} rows into {target}")\n'
@@ -623,21 +675,62 @@ def silver_notebook(platform: dict, table: dict, defaults: dict) -> dict:
     ))
 
     # ---- reconciliation -------------------------------------------------
-    cells.append(code_cell(
-        '# ---- Reconciliation ----------------------------------------------\n'
-        '# SILVER-RECON-003: every input row is accounted for. A shortfall\n'
-        '# means a rule dropped rows without quarantining them, which is a\n'
-        '# framework bug rather than a data problem.\n'
-        'accounted = rows_out + rejected_count\n'
-        'if accounted != rows_in:\n'
-        '    raise AssertionError(\n'
-        '        f"row loss: {rows_in:,} in, {rows_out:,} out, "\n'
-        '        f"{rejected_count:,} quarantined, {rows_in - accounted:,} unaccounted"\n'
-        '    )\n'
-        'print(f"reconciled: {rows_in:,} = {rows_out:,} kept + {rejected_count:,} quarantined")\n'
-        '\n'
-        'dq.flush()\n'
-    ))
+    # Some rules MULTIPLY rows on purpose -- explode_json_array turns one
+    # persona into one row per building it may see, extend_calendar pads a
+    # partial calendar out to whole years. For those the identity
+    # count(in) == count(kept) + count(rejected) cannot hold and is not meant
+    # to, so asserting it fails a correct build.
+    #
+    # It failed in exactly that way here: 6 personas exploded to 21 scope rows
+    # and the notebook raised "row loss: 6 in, 21 out, 0 quarantined, -15
+    # unaccounted" -- naming a row GAIN as a loss, with a negative shortfall as
+    # the only clue that the message was describing the opposite of what
+    # happened.
+    multiplying = ROW_MULTIPLYING_RULES & {r["fn"] for r in table.get("rules", [])}
+    if multiplying:
+        rule_list = ", ".join(sorted(multiplying))
+        cells.append(code_cell(
+            f'# ---- Reconciliation ----------------------------------------------\n'
+            f'# This table uses a ROW-MULTIPLYING rule ({rule_list}), so\n'
+            f'# SILVER-RECON-003 deliberately does not apply: the row count is\n'
+            f'# EXPECTED to rise, and a persona scoped to five buildings\n'
+            f'# genuinely is five facts.\n'
+            f'#\n'
+            f'# The invariant that does hold is one-way: nothing may be lost,\n'
+            f'# and nothing may be silently dropped instead of quarantined.\n'
+            f'# Reconcile the count itself on distinct parent key -- the spec\n'
+            f'# declares that check, and D2 records the same fact as\n'
+            f'# grain_changes: true.\n'
+            f'accounted = rows_out + rejected_count\n'
+            f'if accounted < rows_in:\n'
+            f'    raise AssertionError(\n'
+            f'        f"row loss: {{rows_in:,}} in, {{rows_out:,}} out, "\n'
+            f'        f"{{rejected_count:,}} quarantined, "\n'
+            f'        f"{{rows_in - accounted:,}} unaccounted -- a multiplying "\n'
+            f'        f"rule may add rows but must never lose them"\n'
+            f'    )\n'
+            f'print(f"row gain by design ({rule_list}): "\n'
+            f'      f"{{rows_in:,}} in -> {{rows_out:,}} out, "\n'
+            f'      f"{{rejected_count:,}} quarantined")\n'
+            f'\n'
+            f'dq.flush()\n'
+        ))
+    else:
+        cells.append(code_cell(
+            '# ---- Reconciliation ----------------------------------------------\n'
+            '# SILVER-RECON-003: every input row is accounted for. A shortfall\n'
+            '# means a rule dropped rows without quarantining them, which is a\n'
+            '# framework bug rather than a data problem.\n'
+            'accounted = rows_out + rejected_count\n'
+            'if accounted != rows_in:\n'
+            '    raise AssertionError(\n'
+            '        f"row loss: {rows_in:,} in, {rows_out:,} out, "\n'
+            '        f"{rejected_count:,} quarantined, {rows_in - accounted:,} unaccounted"\n'
+            '    )\n'
+            'print(f"reconciled: {rows_in:,} = {rows_out:,} kept + {rejected_count:,} quarantined")\n'
+            '\n'
+            'dq.flush()\n'
+        ))
 
     return notebook(cells, default_lakehouse="lh_silver", known_lakehouses=["lh_bronze", "lh_silver"])
 

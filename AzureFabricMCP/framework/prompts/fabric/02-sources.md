@@ -88,7 +88,7 @@ head -1 <file>.csv        # compare against the declared column order
 ## Step 4 — Validate
 
 ```bash
-python framework/generators/validate.py --project <project> --track fabric
+python AzureFabricMCP/framework/generators/validate.py --project <project> --track fabric
 ```
 
 ## Authoring trap: unquoted commas

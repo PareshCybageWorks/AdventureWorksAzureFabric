@@ -6,7 +6,7 @@ verdict logic is deliberately separate from measurement so the rules that decide
 pass/warn/fail can be tested in a second, rather than only inside a Fabric
 session where a wrong threshold is invisible.
 
-    python framework/tests/test_monitoring.py
+    python AzureFabricMCP/framework/tests/test_monitoring.py
 """
 
 from __future__ import annotations

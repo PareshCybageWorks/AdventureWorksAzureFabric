@@ -1,0 +1,23 @@
+relationship 915cfbc1-0abd-568a-addf-432dbdc17c6b
+	fromColumn: Arrivals.card_holder_sk
+	toColumn: Cardholder.card_holder_sk
+
+relationship 04ca8b5f-4728-500d-a7da-fb57ba053305
+	fromColumn: Arrivals.building_sk
+	toColumn: Building.building_sk
+
+relationship 08bb3430-8507-50bf-9904-5720e4a4230d
+	fromColumn: Arrivals.arrival_date_sk
+	toColumn: Date.date_sk
+
+relationship 6973733d-858c-5896-af80-89023064f319
+	fromColumn: Arrivals.arrival_time_sk
+	toColumn: 'Time of Day'.time_sk
+
+relationship 925eb479-8437-575b-8360-83cc02396a6e
+	fromColumn: Arrivals.reader_sk
+	toColumn: Reader.reader_sk
+
+relationship 8a86f97d-578c-5ee7-9f71-cdb1ee5af713
+	fromColumn: 'User Scope'.'Scope Building ID'
+	toColumn: Building.'Building ID'

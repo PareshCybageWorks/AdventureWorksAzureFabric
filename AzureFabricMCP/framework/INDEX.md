@@ -17,7 +17,7 @@ No project data ever lives here.
 ## Starting a new project
 
 ```bash
-python framework/tools/new_project.py --name 02_your-project
+python AzureFabricMCP/framework/tools/new_project.py --name 02_your-project
 ```
 
 Creates the folders, copies all ten stage templates, and writes a README with
@@ -29,7 +29,7 @@ ask, and what to refuse to guess. To find out where an unfinished project got
 to, in any session:
 
 ```bash
-python framework/tools/project_status.py --project 02_your-project
+python AzureFabricMCP/framework/tools/project_status.py --project 02_your-project
 ```
 
 Status is derived from the specs themselves — a stage is unfinished if it still
@@ -108,40 +108,40 @@ either produces byte-identical output with the same commands.
 
 ```bash
 # validate (schema + semantic)
-python framework/generators/validate.py --project <p> [--track fabric] [--strict]
+python AzureFabricMCP/framework/generators/validate.py --project <p> [--track fabric] [--strict]
 
 # generate
-python framework/generators/generate_notebooks.py --specs <p> --out <p>/generated/notebooks
-python framework/generators/generate_pipelines.py --specs <p> --out <p>/generated/pipelines
-python framework/generators/generate_ddl.py   --specs <p> --out <p>/generated/migrations
-python framework/generators/generate_tmdl.py  --specs <p> --out <p>/generated/model
-python framework/generators/generate_report.py --specs <p> --out <p>/generated/reports
-python framework/generators/generate_monitoring.py --specs <p> --out <p>/generated/notebooks
-python framework/generators/generate_workflows.py --specs <p> --out <repo-root>
-python framework/generators/sync_contract_rules.py            # after adding a cleansing rule
+python AzureFabricMCP/framework/generators/generate_notebooks.py --specs <p> --out <p>/generated/notebooks
+python AzureFabricMCP/framework/generators/generate_pipelines.py --specs <p> --out <p>/generated/pipelines
+python AzureFabricMCP/framework/generators/generate_ddl.py   --specs <p> --out <p>/generated/migrations
+python AzureFabricMCP/framework/generators/generate_tmdl.py  --specs <p> --out <p>/generated/model
+python AzureFabricMCP/framework/generators/generate_report.py --specs <p> --out <p>/generated/reports
+python AzureFabricMCP/framework/generators/generate_monitoring.py --specs <p> --out <p>/generated/notebooks
+python AzureFabricMCP/framework/generators/generate_workflows.py --specs <p> --out <repo-root>
+python AzureFabricMCP/framework/generators/sync_contract_rules.py            # after adding a cleansing rule
 
 # deploy
-python framework/deploy/create_workspaces.py --project <p> --capacity <id>
-python framework/deploy/push_library.py      --project <p> --env dev --wait
-python framework/deploy/push_files.py        --project <p> --env dev
-python framework/deploy/push_items.py        --project <p> --env dev [--create-missing]
-python framework/deploy/organise_items.py    --project <p> --env dev
-python framework/deploy/connect_git.py       --project <p> --env dev   # optional mirror
+python AzureFabricMCP/framework/deploy/create_workspaces.py --project <p> --capacity <id>
+python AzureFabricMCP/framework/deploy/push_library.py      --project <p> --env dev --wait
+python AzureFabricMCP/framework/deploy/push_files.py        --project <p> --env dev
+python AzureFabricMCP/framework/deploy/push_items.py        --project <p> --env dev [--create-missing]
+python AzureFabricMCP/framework/deploy/organise_items.py    --project <p> --env dev
+python AzureFabricMCP/framework/deploy/connect_git.py       --project <p> --env dev   # optional mirror
 
 # test (no Spark, no pytest)
-python framework/tests/test_monitoring.py
-python framework/tests/test_validator_catches.py   # proves validate.py FAILS on real defects
+python AzureFabricMCP/framework/tests/test_monitoring.py
+python AzureFabricMCP/framework/tests/test_validator_catches.py   # proves validate.py FAILS on real defects
 
 # run without Fabric (fast spec check against real data)
-python framework/tools/dryrun.py --project <p>
+python AzureFabricMCP/framework/tools/dryrun.py --project <p>
 
 # extract a REST source into landing CSVs (spec-driven; full snapshot)
-python framework/tools/extract_rest.py --project <p>
+python AzureFabricMCP/framework/tools/extract_rest.py --project <p>
 
 # when something fails in Fabric
-python framework/tools/run_notebooks.py      --project <p> --env dev nb_x [nb_y ...]
-python framework/tools/diagnose_notebook.py  --project <p> --env dev nb_x
-python framework/tools/drop_tables.py        --project <p> --env dev --item wh_gold fct_x
+python AzureFabricMCP/framework/tools/run_notebooks.py      --project <p> --env dev nb_x [nb_y ...]
+python AzureFabricMCP/framework/tools/diagnose_notebook.py  --project <p> --env dev nb_x
+python AzureFabricMCP/framework/tools/drop_tables.py        --project <p> --env dev --item wh_gold fct_x
 ```
 
 **A failed notebook reports one sentence** — `System cancelled the Spark

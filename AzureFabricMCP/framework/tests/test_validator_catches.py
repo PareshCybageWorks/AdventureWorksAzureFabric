@@ -107,6 +107,71 @@ def break_view_column(specs: dict) -> str | None:
     return None
 
 
+def break_folder_coverage(specs: dict) -> str | None:
+    """Drop the folder that files the Power BI items."""
+    platform = specs.get("fabric/01-scaffolding")
+    folders = (platform or {}).get("workspace_folders") or []
+    for index, folder in enumerate(folders):
+        declares_powerbi = any(
+            entry["item_type"] in ("SemanticModel", "Report")
+            for group in ([folder] + (folder.get("subfolders") or []))
+            for entry in (group.get("contains") or [])
+        )
+        if declares_powerbi:
+            removed = folders.pop(index)
+            return f"removed folder {removed['name']!r}"
+    return None
+
+
+def break_model_column(specs: dict) -> str | None:
+    """A model column bound to a business-rule name the measure renames away."""
+    gold = specs.get("fabric/05-gold")
+    model = specs.get("powerbi/01-semantic-model")
+    if not gold or not model:
+        return None
+    for fact in (gold or {}).get("facts", []):
+        renamed = [m for m in fact.get("measures", []) or []
+                   if m.get("source") and m["source"] != m["target"]]
+        if not renamed:
+            continue
+        measure = renamed[0]
+        for table in (model or {}).get("tables", []) or []:
+            if (table.get("source_table") or "").split(".")[-1] != fact["name"]:
+                continue
+            for column in table.get("columns") or []:
+                if column.get("source") == measure["target"]:
+                    column["source"] = measure["source"]
+                    return (f"{table['name']} column -> {fact['name']}."
+                            f"{measure['source']} (the pre-rename name)")
+    return None
+
+
+def break_bronze_idempotency(specs: dict) -> str | None:
+    """Full-snapshot bronze with no ingest_date partition -- a retry duplicates."""
+    bronze = specs.get("fabric/03-bronze")
+    if not bronze:
+        return None
+    if not any(x.get("load_pattern") == "full" for x in bronze.get("tables", []) or []):
+        return None
+    defaults = bronze.get("defaults") or {}
+    partitions = defaults.get("partition_by") or []
+    if "ingest_date" not in partitions:
+        return None
+    defaults["partition_by"] = [p for p in partitions if p != "ingest_date"]
+    return "removed ingest_date from bronze defaults.partition_by"
+
+
+def break_connection_kind(specs: dict) -> str | None:
+    """A source declaring jdbc, which the bronze generator cannot emit."""
+    sources = specs.get("fabric/02-sources")
+    for source in (sources or {}).get("sources", []) or []:
+        connection = source.get("connection") or {}
+        if connection.get("kind") == "file":
+            connection["kind"] = "jdbc"
+            return f"source {source['name']!r} connection.kind -> jdbc"
+    return None
+
+
 CASES = [
     ("business_key naming a renamed source column",
      break_business_key, "dimension-keys",
@@ -120,16 +185,34 @@ CASES = [
     ("bi view reading a non-existent column",
      break_view_column, "view-columns",
      "three views failed at deploy"),
+    ("no folder declared for the Power BI items",
+     break_folder_coverage, "folder-coverage",
+     "the model and report sat at the workspace root, unfindable"),
+    ("a model column bound to a pre-rename business-rule name",
+     break_model_column, "model-columns",
+     "the model deployed Succeeded and failed EVERY query with "
+     "\"Invalid column name\""),
+    ("full-snapshot bronze with no ingest_date partition",
+     break_bronze_idempotency, "bronze-idempotency",
+     "a retried notebook appended a second full snapshot; 300 cardholders "
+     "became 600 and the pipeline reported success"),
+    ("a source declaring a connection kind the generator cannot emit",
+     break_connection_kind, "connection-kind",
+     "a jdbc source generated a CSV reader that found no landing path",
+     "WARN"),
 ]
 
 SPEC_FILES = {
+    "fabric/01-scaffolding": "fabric/01-scaffolding.yaml",
+    "fabric/02-sources": "fabric/02-sources.yaml",
+    "fabric/03-bronze": "fabric/03-bronze.yaml",
     "fabric/05-gold": "fabric/05-gold.yaml",
     "powerbi/01-semantic-model": "powerbi/01-semantic-model.yaml",
 }
 
 
 def run_case(project: Path, label: str, mutate, expected: str,
-             consequence: str) -> str:
+             consequence: str, level: str = "ERROR") -> str:
     with tempfile.TemporaryDirectory() as tmp:
         copy = Path(tmp) / project.name
         shutil.copytree(project, copy, ignore=shutil.ignore_patterns(
@@ -153,12 +236,58 @@ def run_case(project: Path, label: str, mutate, expected: str,
         result = subprocess.run(
             [sys.executable, str(VALIDATE), "--project", str(copy)],
             capture_output=True, text=True, cwd=str(FRAMEWORK.parent))
-        caught = any(expected in line and "ERROR" in line
+        # Some defects are legitimately a WARNING -- declaring the true
+        # upstream kind is honest documentation even though the generator
+        # cannot act on it. Proving a warning fires still matters: an
+        # unexercised check is one nobody knows is broken.
+        caught = any(expected in line and level in line
                      for line in result.stdout.splitlines())
         print(f"  {'CAUGHT' if caught else 'MISSED'}  {label}")
         print(f"          introduced: {reason}")
         print(f"          would have: {consequence}")
         return "CAUGHT" if caught else "MISSED"
+
+
+def prove_dryrun_parity() -> str:
+    """Prove check_dryrun_parity fires, without a spec mutation.
+
+    This one cannot be exercised by mutating a project: `fn` is constrained by
+    the contract enum, which is GENERATED from the cleansing REGISTRY, so every
+    value a spec may legally hold is by definition a real rule. The gap the
+    check exists for opens in the FRAMEWORK -- someone adds a rule to
+    cleansing.py and sync_contract_rules.py and forgets tools/dryrun.py -- and
+    a project spec cannot express that state.
+
+    So the defect is introduced directly: a silver spec using a rule the dryrun
+    simulator does not implement. That is exactly the condition the check looks
+    for, and it is what happened when five rules were added and the dry run
+    reported PASSED while never running any of them.
+    """
+    sys.path.insert(0, str(FRAMEWORK / "generators"))
+    import importlib
+    validate = importlib.import_module("validate")
+
+    class Collector:
+        def __init__(self):
+            self.errors = []
+        def error(self, check, message):
+            self.errors.append((check, message))
+        def ok(self, *_args, **_kwargs):
+            pass
+        def warn(self, *_args, **_kwargs):
+            pass
+
+    report = Collector()
+    specs = {"fabric/04-silver": {"doc": {"tables": [
+        {"rules": [{"fn": "cast_types"},
+                   {"fn": "a_rule_dryrun_does_not_implement"}]}]}}}
+    validate.check_dryrun_parity(specs, report)
+
+    caught = any(check == "dryrun-parity" for check, _ in report.errors)
+    print(f"  {'CAUGHT' if caught else 'MISSED'}  a cleansing rule with no dryrun implementation")
+    print(f"          introduced: silver rule 'a_rule_dryrun_does_not_implement'")
+    print(f"          would have: DRY RUN PASSED while skipping the rule entirely")
+    return "CAUGHT" if caught else "MISSED"
 
 
 def main() -> int:
@@ -171,11 +300,21 @@ def main() -> int:
     if args.project:
         project = Path(args.project).resolve()
     else:
-        candidates = [
-            p for p in sorted(FRAMEWORK.parent.iterdir())
-            if p.is_dir() and (p / "fabric" / "05-gold.yaml").exists()
-            and (p / "powerbi" / "01-semantic-model.yaml").exists()
-        ]
+        # Walk UP looking for sibling projects rather than assuming the
+        # framework sits directly in the repository root. It does not always:
+        # this framework moved from <root>/framework to
+        # <root>/AzureFabricMCP/framework, and a discovery pinned to
+        # FRAMEWORK.parent then found nothing and reported "no project" as
+        # though none existed.
+        candidates = []
+        for root in (FRAMEWORK.parent, FRAMEWORK.parent.parent):
+            candidates = [
+                p for p in sorted(root.iterdir())
+                if p.is_dir() and (p / "fabric" / "05-gold.yaml").exists()
+                and (p / "powerbi" / "01-semantic-model.yaml").exists()
+            ]
+            if candidates:
+                break
         if not candidates:
             print("no project with both a gold and semantic-model spec found")
             return 0
@@ -183,6 +322,7 @@ def main() -> int:
 
     print(f"mutating a copy of {project.name}\n")
     results = [run_case(project, *case) for case in CASES]
+    results.append(prove_dryrun_parity())
 
     missed = results.count("MISSED")
     skipped = results.count("SKIP")

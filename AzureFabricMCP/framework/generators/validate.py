@@ -32,6 +32,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import ast
+import fnmatch
 import json
 import re
 import sys
@@ -473,7 +475,7 @@ def check_rule_enum_fresh(specs: dict, report: Report, contracts: Path) -> None:
             "rule-enum",
             "the silver contract has drifted from ttfabric REGISTRY -- "
             + "; ".join(detail)
-            + ". Run: python framework/generators/sync_contract_rules.py",
+            + ". Run: python AzureFabricMCP/framework/generators/sync_contract_rules.py",
         )
     else:
         report.ok(f"rule-enum: contract matches the library ({len(registry)} rules)")
@@ -1101,6 +1103,253 @@ def check_semantic_model(specs: dict, report: Report) -> None:
                   f"{len(spec.get('measures') or [])} measures resolve")
 
 
+def gold_columns_by_table(gold: dict) -> dict[str, set[str]]:
+    """Every column each finished gold table actually carries.
+
+    Shared by check_view_columns and check_model_columns ON PURPOSE. Both ask
+    the same question -- "does this column exist on the built table" -- and two
+    implementations of it would drift, at which point one of them starts
+    reporting a column the other accepts.
+
+    The subtlety both need is the RENAME: a business rule's target is renamed
+    away when a measure reads it, so `arrival_event` is computed and then
+    written as `arrival_count`. The rule's own name is not a column on the
+    finished fact, even though it reads naturally and appears in the spec.
+    """
+    columns_by_table: dict[str, set[str]] = {}
+
+    for dimension in gold.get("dimensions", []):
+        names = {c["target"] for c in dimension.get("columns", []) or []}
+        names.add(dimension["surrogate_key"])
+        names.update(dimension.get("business_key", []))
+        for rule in dimension.get("business_rules", []) or []:
+            names.add(rule["target"])
+        # SCD2 validity columns are INJECTED by merge_scd2, not declared.
+        if dimension.get("scd") == "type2":
+            scd2 = dimension.get("scd2_columns") or {}
+            names |= {
+                scd2.get("valid_from", "valid_from"),
+                scd2.get("valid_to", "valid_to"),
+                scd2.get("is_current", "is_current"),
+                scd2.get("version", "version"),
+            }
+        # A generated calendar's columns come from the library, not the spec.
+        if dimension.get("source") == "generated":
+            names |= {"full_date", "date_sk", "year", "quarter", "month",
+                      "month_name", "year_month", "week_of_year", "day_of_month",
+                      "day_name", "is_weekend", "fiscal_year", "fiscal_quarter"}
+        columns_by_table[dimension["name"]] = names
+
+    for fact in gold.get("facts", []):
+        names = {d["target"] for d in fact.get("degenerate_dimensions", []) or []}
+        names |= {k["target"] for k in fact.get("dimension_keys", []) or []}
+        names |= {m["target"] for m in fact.get("measures", []) or []}
+        names |= {b["target"] for b in fact.get("business_rules", []) or []}
+        names |= {q["target"] for q in fact.get("quality_flags", []) or []}
+
+        renamed_away = {m["source"] for m in fact.get("measures", []) or []
+                        if m.get("source") and m["source"] != m["target"]}
+        renamed_away |= {d["source"] for d in fact.get("degenerate_dimensions", []) or []
+                         if d.get("source") and d["source"] != d["target"]}
+        names -= renamed_away
+
+        columns_by_table[fact["name"]] = names
+
+    return columns_by_table
+
+
+def check_model_columns(specs: dict, report: Report) -> None:
+    """Every semantic-model column names a column its gold table carries.
+
+    check_model_names resolves DAX against the model's own DISPLAY names, which
+    is a different question: a model can be internally consistent and still
+    bind every column to a name the warehouse does not have.
+
+    That is what happened. The fact carries the MEASURE target -- `arrival_event`
+    is computed by a business rule and written as `arrival_count` -- and P1 bound
+    to the rule's name. The model DEPLOYED cleanly, reported Succeeded, and then
+    failed on every single query:
+
+        Invalid column name 'arrival_event'.
+        Invalid column name 'personnel_arrival'.
+        Invalid column name 'visitor_arrival'.
+
+    Nothing local objected, because `view-columns` asks exactly this question of
+    `bi` views and nothing asked it of the model. Same defect, same rename, one
+    layer across.
+
+    Conservative in the same way view-columns is: only columns whose gold table
+    can be resolved from `source_table` are checked, and a table this cannot tie
+    to a gold object is left alone.
+    """
+    gold = specs.get("fabric/05-gold", {}).get("doc")
+    model = specs.get("powerbi/01-semantic-model", {}).get("doc")
+    if not gold or not model:
+        return
+
+    columns_by_table = gold_columns_by_table(gold)
+
+    problems: list[str] = []
+    checked = 0
+    for table in model.get("tables", []) or []:
+        source_table = (table.get("source_table") or "").split(".")[-1]
+        available = columns_by_table.get(source_table)
+        if not available:
+            continue
+        for column in table.get("columns") or []:
+            source = column.get("source")
+            if not source:
+                continue
+            checked += 1
+            if source in available:
+                continue
+            problems.append(
+                f"{table['name']}.{column.get('name', source)!r} binds to "
+                f"{source_table}.{source}, which that table does not carry. "
+                f"The model will deploy and then fail every query with "
+                f"\"Invalid column name '{source}'\".")
+
+    if problems:
+        for problem in dict.fromkeys(problems):
+            report.error("model-columns", problem)
+    elif checked:
+        report.ok(f"model-columns: all {checked} model column(s) exist on their "
+                  f"gold table")
+
+
+def check_bronze_idempotency(specs: dict, report: Report) -> None:
+    """A full-snapshot bronze table must own an ingest_date partition.
+
+    Bronze is append -- the contract permits nothing else, because overwrite
+    would destroy the replayable history that is the point of the layer. But
+    `append` plus `load_pattern: full` means a pipeline RETRY lands a second
+    complete snapshot, and the pipeline then reports SUCCESS because the retry
+    succeeded.
+
+    This is not the "re-appends on every run" case already recorded in
+    LEARNINGS, which a watermark fixes. It needs no misconfiguration and no
+    second run: four of fifteen bronze notebooks hit a Spark capacity limit on
+    one contended run, were retried automatically, and each appended a second
+    full copy. 300 cardholders became 600, 5 buildings became 10.
+
+    Nothing failed. It surfaced two layers later as a gold fan-out --
+    "2,000 fact rows became 4,000" -- and blamed the dimension for having
+    overlapping validity windows, on a type-1 dimension that has none.
+
+    With ingest_date in partition_by, generate_notebooks emits a dynamic
+    partition overwrite instead: a re-run replaces its own day and leaves every
+    earlier date intact.
+    """
+    bronze = specs.get("fabric/03-bronze", {}).get("doc")
+    if not bronze:
+        return
+
+    partitions = set((bronze.get("defaults") or {}).get("partition_by") or [])
+    full_tables = [t["target"] for t in bronze.get("tables", []) or []
+                   if t.get("load_pattern") == "full"]
+    if not full_tables:
+        return
+
+    if "ingest_date" not in partitions:
+        report.error(
+            "bronze-idempotency",
+            f"{len(full_tables)} bronze table(s) are load_pattern `full` but "
+            f"defaults.partition_by does not include `ingest_date`: "
+            f"{full_tables[:4]}{' ...' if len(full_tables) > 4 else ''}. "
+            f"Bronze is append-only, so a pipeline RETRY lands a second full "
+            f"snapshot and reports success. Partitioning by ingest_date lets "
+            f"the generator replace the day instead of appending beside it.")
+    else:
+        report.ok(f"bronze-idempotency: all {len(full_tables)} full-snapshot "
+                  f"table(s) partition by ingest_date, so a retry replaces "
+                  f"rather than duplicates")
+
+
+def check_generator_supports_connection(specs: dict, report: Report) -> None:
+    """The bronze generator emits a CSV reader and nothing else.
+
+    `connection.kind` accepts jdbc, rest, eventhub and shortcut, and the
+    contract is happy with all of them -- but generate_notebooks.py has one
+    branch: `spark.read...csv(landing_path)`. generate_pipelines.py has no copy
+    activity either. So a source declared as `jdbc` validates, generates a
+    notebook that reads files, and then fails at run time looking for a landing
+    path nobody populated.
+
+    Warn rather than error: declaring the true upstream kind is legitimate
+    documentation, and a project may land files by other means. But it must be
+    a deliberate choice rather than an assumption that the framework will
+    connect for you.
+    """
+    sources_spec = specs.get("fabric/02-sources", {}).get("doc")
+    if not sources_spec:
+        return
+
+    unsupported = [(s["name"], s["connection"]["kind"])
+                   for s in sources_spec.get("sources", []) or []
+                   if (s.get("connection") or {}).get("kind") not in (None, "file")]
+    for name, kind in unsupported:
+        report.warn(
+            "connection-kind",
+            f"source {name!r} declares connection.kind: {kind}, but the bronze "
+            f"generator only emits a CSV file reader -- there is no {kind} "
+            f"branch in generate_notebooks.py and no copy activity in "
+            f"generate_pipelines.py. Files must be landed before the pipeline "
+            f"runs, whatever this says.")
+
+
+def check_dryrun_parity(specs: dict, report: Report) -> None:
+    """Every cleansing rule a project uses is simulated by dryrun.py.
+
+    The dry run keeps its OWN implementation of every rule, deliberately -- it
+    is a second reading of the spec, which is what makes it worth running. The
+    trap is that a rule missing there is SKIPPED, not failed, so the dry run
+    reports success while never exercising the rule at all.
+
+    Adding a rule therefore takes four places, not the two the F4 prompt lists:
+    ttfabric/cleansing.py, sync_contract_rules.py, tools/dryrun.py, and
+    generate_notebooks.py where the reconciliation has to tolerate what the
+    rule does to the row count.
+
+    Found by adding five rules, watching `DRY RUN PASSED`, and then having the
+    real notebook fail on the first one.
+    """
+    silver = specs.get("fabric/04-silver", {}).get("doc")
+    if not silver:
+        return
+
+    dryrun_path = Path(__file__).resolve().parent.parent / "tools" / "dryrun.py"
+    if not dryrun_path.exists():
+        return
+    try:
+        tree = ast.parse(dryrun_path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return
+
+    simulated: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and any(
+                isinstance(t, ast.Name) and t.id == "REGISTRY" for t in node.targets):
+            if isinstance(node.value, ast.Dict):
+                simulated |= {k.value for k in node.value.keys
+                              if isinstance(k, ast.Constant)}
+
+    if not simulated:
+        return
+
+    used = {rule["fn"] for table in silver.get("tables", []) or []
+            for rule in table.get("rules", []) or []}
+    missing = sorted(used - simulated)
+    if missing:
+        report.error(
+            "dryrun-parity",
+            f"rule(s) with no dryrun implementation: {missing}. dryrun.py "
+            f"SKIPS an unknown rule rather than failing, so the dry run would "
+            f"report success while never exercising them.")
+    elif used:
+        report.ok(f"dryrun-parity: all {len(used)} cleansing rule(s) are "
+                  f"simulated by dryrun.py")
+
+
 def check_view_columns(specs: dict, report: Report) -> None:
     """Every column a `bi` view names exists on the gold table it reads.
 
@@ -1124,55 +1373,8 @@ def check_view_columns(specs: dict, report: Report) -> None:
     if not gold:
         return
 
-    # Every column each gold table actually carries.
-    columns_by_table: dict[str, set[str]] = {}
-    for dimension in gold.get("dimensions", []):
-        names = {c["target"] for c in dimension.get("columns", []) or []}
-        names.add(dimension["surrogate_key"])
-        names.update(dimension.get("business_key", []))
-        for rule in dimension.get("business_rules", []) or []:
-            names.add(rule["target"])
-        # SCD2 validity columns are INJECTED by merge_scd2, not declared in
-        # `columns`. A type2 dimension really does carry is_current at runtime,
-        # so a view filtering on it is correct -- flagging that would be a
-        # false error, and a check that cries wolf gets switched off.
-        if dimension.get("scd") == "type2":
-            scd2 = dimension.get("scd2_columns") or {}
-            names |= {
-                scd2.get("valid_from", "valid_from"),
-                scd2.get("valid_to", "valid_to"),
-                scd2.get("is_current", "is_current"),
-                scd2.get("version", "version"),
-            }
-
-        # A generated calendar's columns come from the library, not the spec.
-        if dimension.get("source") == "generated":
-            names |= {"full_date", "date_sk", "year", "quarter", "month",
-                      "month_name", "year_month", "week_of_year", "day_of_month",
-                      "day_name", "is_weekend", "fiscal_year", "fiscal_quarter"}
-        columns_by_table[dimension["name"]] = names
-
-    for fact in gold.get("facts", []):
-        names = {d["target"] for d in fact.get("degenerate_dimensions", []) or []}
-        names |= {k["target"] for k in fact.get("dimension_keys", []) or []}
-        names |= {m["target"] for m in fact.get("measures", []) or []}
-        names |= {b["target"] for b in fact.get("business_rules", []) or []}
-        names |= {q["target"] for q in fact.get("quality_flags", []) or []}
-
-        # A business rule's target is RENAMED AWAY when a measure reads it.
-        # `created_ticket` is computed by a rule, then renamed to the measure's
-        # target `created_ticket_count` before the write, so the rule's own
-        # name is not a column on the finished fact.
-        #
-        # This is the exact trap the views fell into: they were written against
-        # the rule names, which read naturally and do not exist.
-        renamed_away = {m["source"] for m in fact.get("measures", []) or []
-                        if m.get("source") and m["source"] != m["target"]}
-        renamed_away |= {d["source"] for d in fact.get("degenerate_dimensions", []) or []
-                         if d.get("source") and d["source"] != d["target"]}
-        names -= renamed_away
-
-        columns_by_table[fact["name"]] = names
+    # Shared with check_model_columns so the two cannot drift.
+    columns_by_table = gold_columns_by_table(gold)
 
     from_join = re.compile(r"(?:FROM|JOIN)\s+(?:dbo|bi)\.(\w+)\s+(?:AS\s+)?(\w+)",
                            re.IGNORECASE)
@@ -1205,6 +1407,116 @@ def check_view_columns(specs: dict, report: Report) -> None:
     elif gold.get("views"):
         report.ok(f"view-columns: all {len(gold['views'])} bi view(s) reference "
                   f"real gold columns")
+
+
+def check_folder_coverage(specs: dict, report: Report) -> None:
+    """Every item the generators produce has a workspace_folders entry.
+
+    organise_items.py files only what a folder DECLARES. Anything the spec does
+    not name stays at the workspace root -- and it reports "0 unmatched" while
+    doing so, because an item nobody planned for was never in the plan to begin
+    with. The failure is silent in both directions.
+
+    The shipped template declares folders for the three layers, the master
+    pipeline and the datastore, and nothing else. So every project scaffolded
+    from it starts with four items destined for the root:
+
+        nb_cascade_quarantine   does not match nb_clean_*
+        nb_dq_monitor           belongs to no single layer
+        sm_*                    no Power BI folder exists
+        the report              same
+
+    Two of those are the items a business user actually opens, which made them
+    the two hardest to find in a workspace where every notebook was tidy.
+
+    Conservative on purpose: only items whose generated name can be derived
+    from the specs are checked, and a project declaring no workspace_folders at
+    all is skipped rather than flooded.
+    """
+    platform = specs.get("fabric/01-scaffolding", {}).get("doc")
+    if not platform or not platform.get("workspace_folders"):
+        return
+
+    naming = platform.get("naming", {})
+    verbs = naming.get("verbs", {})
+    template = naming.get("notebook", "nb_{verb}_{entity}")
+
+    def notebook(verb_key: str, entity: str) -> str:
+        return template.format(verb=verbs.get(verb_key, verb_key),
+                               layer=verb_key, entity=entity)
+
+    expected: list[tuple[str, str]] = []          # (item_type, name)
+
+    sources = specs.get("fabric/02-sources", {}).get("doc") or {}
+    for source in sources.get("sources", []):
+        for entity in source.get("entities", []):
+            expected.append(("Notebook", notebook("bronze", entity["name"])))
+
+    silver = specs.get("fabric/04-silver", {}).get("doc") or {}
+    for table in silver.get("tables", []):
+        expected.append(("Notebook", notebook("silver", table["target"])))
+    if silver.get("cascade_quarantine"):
+        expected.append(("Notebook", "nb_cascade_quarantine"))
+
+    gold = specs.get("fabric/05-gold", {}).get("doc") or {}
+    for dimension in gold.get("dimensions", []):
+        expected.append(("Notebook", notebook("gold", dimension["name"])))
+    for fact in gold.get("facts", []):
+        expected.append(("Notebook", notebook("gold", fact["name"])))
+    if gold.get("views"):
+        expected.append(("Notebook", "nb_build_bi_views"))
+    if specs.get("dataops/02-audit"):
+        expected.append(("Notebook", "nb_build_audit"))
+    if specs.get("dataops/01-monitoring"):
+        expected.append(("Notebook", "nb_dq_monitor"))
+
+    for key, name in (naming.get("pipelines") or {}).items():
+        expected.append(("DataPipeline", name))
+
+    storage = ((platform.get("storage") or {}).get("items") or {}).get("medallion") or {}
+    for layer, item in storage.items():
+        kind = "Lakehouse" if item.get("item") == "lakehouse" else "Warehouse"
+        expected.append((kind, item["name"]))
+
+    model = specs.get("powerbi/01-semantic-model", {}).get("doc") or {}
+    if model.get("model", {}).get("name"):
+        expected.append(("SemanticModel", model["model"]["name"]))
+
+    reports = specs.get("powerbi/02-reports", {}).get("doc") or {}
+    for entry in reports.get("reports", []):
+        # A report DEPLOYS under display_name, so that is the name a folder
+        # pattern has to match -- see organise_items.
+        expected.append(("Report", entry.get("display_name") or entry["name"]))
+
+    # Flatten every declared folder entry.
+    declared: list[tuple[str, str]] = []
+    for folder in platform["workspace_folders"]:
+        for entry in folder.get("contains", []) or []:
+            declared.append((entry["item_type"],
+                             entry.get("name_pattern") or entry["name"]))
+        for sub in folder.get("subfolders", []) or []:
+            for entry in sub.get("contains", []) or []:
+                declared.append((entry["item_type"],
+                                 entry.get("name_pattern") or entry["name"]))
+
+    unfiled = [
+        (item_type, name) for item_type, name in dict.fromkeys(expected)
+        if not any(declared_type == item_type and fnmatch.fnmatch(name, pattern)
+                   for declared_type, pattern in declared)
+    ]
+
+    if unfiled:
+        for item_type, name in unfiled[:12]:
+            report.error("folder-coverage",
+                         f"{item_type} {name!r} matches no workspace_folders "
+                         f"entry, so organise_items leaves it at the workspace "
+                         f"root")
+        if len(unfiled) > 12:
+            report.error("folder-coverage",
+                         f"...and {len(unfiled) - 12} more unfiled item(s)")
+    else:
+        report.ok(f"folder-coverage: all {len(set(expected))} generated item(s) "
+                  f"have a folder")
 
 
 def check_model_names(specs: dict, report: Report) -> None:
@@ -1670,8 +1982,13 @@ SEMANTIC_CHECKS = (
     check_defect_handlers,
     check_view_dialect,
     check_dimension_business_keys,
+    check_folder_coverage,
     check_view_columns,
+    check_model_columns,
     check_model_names,
+    check_bronze_idempotency,
+    check_generator_supports_connection,
+    check_dryrun_parity,
     check_discarded_rows,
     check_cascade_quarantine,
     check_git_integration,
@@ -1731,3 +2048,5 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+

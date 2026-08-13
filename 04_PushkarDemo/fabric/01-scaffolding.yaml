@@ -1,0 +1,350 @@
+# =============================================================================
+# fabric/01-scaffolding.yaml -- Stage F1
+# =============================================================================
+# The platform this project runs ON: tenant, capacity, topology, domains,
+# environment workspaces, storage items, naming.
+#
+# Nothing about DATA belongs here (sources = F2, mappings = F3-F5). Branch
+# mapping and promotion gates belong to the CI/CD track -- a workspace is
+# scaffolding, a branch is delivery.
+#
+# Contract : ../../AzureFabricMCP/framework/contracts/fabric/01-scaffolding.schema.json
+# Procedure: ../../AzureFabricMCP/framework/prompts/fabric/01-scaffolding.md
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: FabricScaffolding
+
+metadata:
+  name: pushkar-demo
+  description: Executive KPI dashboards for CxO, sourced from the local PostgreSQL `kastle` database
+  owner: data-engineering
+  contact: pareshran@cybage.com
+  # Relative to THIS spec file, not to the repository root. The framework sits
+  # a level up under AzureFabricMCP/, alongside the numbered project folders.
+  #
+  # Nothing catches a stale value here: the contract only type-checks the
+  # string, so a wrong path surfaces when a generator tries to resolve it,
+  # not at validation. The CI step paths in cicd/01-pipeline.yaml carry the
+  # same dependency and ARE checked by `cicd-scripts`.
+  framework_path: ../../AzureFabricMCP/framework
+
+tenant:
+  tenant_id: ${FABRIC_TENANT_ID}         # Cybage Software Pvt. Ltd, cybage.onmicrosoft.com
+  region: centralindia
+  onelake_endpoint: https://onelakecentralindia.pbidedicated.windows.net
+  capacity:
+    default_sku: FTL64
+    default_capacity_id: 325b3b5d-baef-44cb-97f4-a7d5eca95390
+    # Now shared by THREE projects -- 01_demo-project, 03_live_demo and this
+    # one. Declared rather than discovered: a trial expires and takes every
+    # environment's compute with it at the same moment, prod included. Three
+    # projects now sit on one expiry date, so the day it lapses is a
+    # three-project outage, not a one-project one.
+    is_trial: true
+
+    # Deliberately NOT copied from the sibling projects. Both record an F2
+    # here as the intended successor, and an F2 has 2 capacity units against
+    # the trial's 64 -- Spark does not refuse it, it allocates a minimal pool
+    # and either crawls for hours or dies on memory, with nothing in the logs
+    # pointing at capacity. The validator fails on it by design.
+    #
+    # Left absent instead of inheriting a value that is known to be wrong.
+    # Fill it once someone has confirmed an F8-or-larger replacement, sized
+    # against a real p_orchestrate_master run.
+
+auth:
+  mode: service_principal
+  client_id: ${FABRIC_CLIENT_ID}
+  # A REFERENCE, never a value -- a literal here fails check_secrets.
+  #
+  # An environment variable rather than a vault: it resolves first and needs
+  # nobody's permission, CI injects it from a repository secret, and locally
+  # the deploy scripts fall back to `az login` (already active as
+  # pareshran@cybage.com) and need no secret at all. Key Vault needs
+  # roleAssignments/write to grant access, which a Contributor does not hold.
+  #
+  # The PostgreSQL `kastle` credential is a SEPARATE reference and belongs in
+  # F2, not here -- this block is Fabric platform auth only.
+  client_secret_ref: ${AZURE_CLIENT_SECRET}
+
+# -----------------------------------------------------------------------------
+# Topology -- the one switch that decides workspace and storage layout
+# -----------------------------------------------------------------------------
+topology:
+  pattern: medallion
+  rationale: >-
+    Medallion, because none of mesh's three preconditions hold. One delivery
+    team owns the pipeline end to end; there is a single release cadence; and
+    there is no platform-team bottleneck that decentralising would relieve.
+    The whole project reads from ONE PostgreSQL database (`kastle`) under one
+    credential, so per-domain workspaces would multiply items without
+    separating anything that is actually separate -- the subject areas divide
+    the data, not its ownership. `domain` is first-class on every source and
+    table, so adopting mesh later is a change to topology.pattern rather than
+    a spec rewrite.
+  # Quoted: in flow style an unquoted comma ends the value, so prose
+  # containing commas silently becomes extra keys rather than part of it.
+  layers:
+    - { name: bronze, purpose: "Raw full-load extracts from PostgreSQL kastle, landed as-is, immutable" }
+    - { name: silver, purpose: "Cleansed, deduplicated, conformed staging; keys resolved, types normalised" }
+    - { name: gold,   purpose: "Star schema and reporting views serving the CxO executive dashboards" }
+  mesh_sharing:            # ignored while pattern is medallion
+    mechanism: onelake_shortcut
+    publish_layer: gold
+
+# -----------------------------------------------------------------------------
+# Domains -- derived from the profile of PostgreSQL `kastle`, not assumed
+# -----------------------------------------------------------------------------
+# ONE domain, not two. The sixteen tables divide cleanly into a star (arrivals
+# plus its five dimensions) and a permission/RLS cluster (vw_permission_*,
+# vw_auth_admin_reader_details, delegated_public, other_than_delegated_public,
+# kastle_user_security), and it is tempting to call those two domains. They are
+# not: the permission tables carry no measures and answer no business question
+# on their own -- they exist to SCOPE the arrivals star to the logged-in user.
+# A domain is a bounded set of sources and the tables derived from them, with
+# one owner to ask when the data is wrong. Both clusters have the same owner
+# and the same source database, so splitting them would create a second
+# semantic model (sm_*) over data that has no independent consumer.
+#
+# `domain` is first-class, so if a second subject area is ever added -- alarms,
+# credentials, visitor management -- it is a new entry here rather than a
+# restructure.
+domains:
+  - name: workplace_access
+    description: >-
+      Building access events and workplace occupancy. Cardholder arrivals at
+      five Manhattan office buildings, read from the Kastle access-control
+      data mart: who badged in, at which building, through which reader, on
+      what date and at what minute. Serves the CxO occupancy and
+      return-to-office KPIs, scoped per viewer by the permission cluster.
+    # Assumption, stated rather than buried: no owning team was named for this
+    # project, so it inherits the platform team. Ownership decides who gets
+    # asked when a number looks wrong, so correct this if facilities or
+    # security actually owns the access data.
+    owner: data-engineering
+    sources: [kastle_pg]
+    publishes_data_product: true
+
+# -----------------------------------------------------------------------------
+# Environments -- workspaces only; branches live in cicd/
+# -----------------------------------------------------------------------------
+# Two, not four. One delivery path; qa and uat would be provisioned, gated and
+# then never promoted through, which is how an environment ends up with
+# storage and four gates but no deploy path at all. Adding them later is two
+# entries here plus a C1 stage, not a rework.
+environments:
+  - name: dev
+    branch: dev
+    workspace: PushkarDemo_dev
+    workspace_id: 4e558a63-8eb8-43c4-8d17-afb917ce404f   # provisioned 2026-08-10
+    capacity_sku: FTL64
+    # Resolved ids recorded so the spec and the tenant agree. An id recorded
+    # nowhere gets rediscovered by hand every time.
+    #
+    # wh_gold returned an EMPTY id on creation and resolved only on the
+    # idempotent re-run -- warehouse provisioning is async in Fabric and the id
+    # is not available in the create response. This is the documented failure
+    # mode and it reproduced here exactly. A script that recorded the create
+    # response verbatim would have written an empty warehouse id, and every
+    # gold write would then have failed against nothing.
+    provisioned_items:
+      provisioned_at: "2026-08-10"
+      storage:
+        lh_bronze: 42024aa3-81fe-4e04-aaee-6035aff8a2d5
+        lh_silver: 2a5a422a-17b6-4080-8983-e884b41de824
+        wh_gold:   e120fe2c-38d8-4037-abef-33a0c04d9372
+      environment:
+        env_spark: 49def443-fd33-4ff3-bb42-14152a12080f
+
+  - name: prod
+    branch: main
+    # Shorter than PushkarDemo_dev, so it is the easier of the two to hit by
+    # accident. `is_production` marks it: destructive operations resolve it by
+    # ID, never by name. Names get renamed; ids do not.
+    workspace: PushkarDemo
+    workspace_id: null
+    capacity_sku: FTL64
+    is_production: true
+
+# -----------------------------------------------------------------------------
+# Naming -- every generated item name resolves through here
+# -----------------------------------------------------------------------------
+naming:
+  workspace:
+    # Enumerated, not templated: prod breaks {prefix}_{env} by carrying no
+    # suffix, and a template plus a special case is worse than a list --
+    # because the special case is production.
+    medallion: { dev: PushkarDemo_dev, prod: PushkarDemo }
+    mesh: "{domain}PushkarDemo_{env}"
+
+  notebook: "nb_{verb}_{entity}"
+  pipeline: "p_{verb}_{layer}"
+  semantic_model: "sm_{domain}"
+  report: "rpt_{domain}_{purpose}"
+  deployment_pipeline: "dp-pushkar-demo"
+
+  # A verb per layer, so a name says what the item DOES. The layer is already
+  # carried by the storage item and the folder; repeating it would give
+  # nb_bronze_bronze_kastle_customer.
+  verbs: { bronze: load, silver: clean, gold: build, master: orchestrate }
+
+  pipelines:
+    bronze: p_load_bronze
+    silver: p_clean_silver
+    gold: p_build_gold
+    master: p_orchestrate_master
+
+  tables:
+    bronze: "bronze_{source}_{entity}"
+    # Silver holds cleansed STAGING, not a dimensional model. Naming it dim_/
+    # fct_ overstates what it is and puts silver's tables one character from
+    # gold's -- different items, same-looking name.
+    silver: "stg_{entity}"
+    gold_dimension: "dim_{entity}"
+    gold_fact: "fct_{entity}"
+    gold_view: "vw_{purpose}"
+
+  # Enforced by the validator. A convention is only worth having if it cannot
+  # drift back.
+  table_prefixes:
+    silver: [stg_]
+    gold: [dim_, fct_, vw_]
+
+  casing: snake_case
+
+# -----------------------------------------------------------------------------
+# Storage -- split follows whichever axis OWNS the data
+# -----------------------------------------------------------------------------
+#   medallion -> the LAYER owns it. Retention, permissions and blast radius
+#                differ per layer, and an item is the smallest unit most
+#                Fabric settings apply to.
+#   mesh      -> the DOMAIN owns it.
+storage:
+  items:
+    medallion:
+      bronze: { item: lakehouse, name: lh_bronze }
+      silver: { item: lakehouse, name: lh_silver }
+      # Warehouse, not lakehouse: Power BI is the only consumer of gold and
+      # the CxO dashboards are served through vw_* reporting views. Both want
+      # a real T-SQL surface. A lakehouse would mean the SQL analytics
+      # endpoint with no view layer to hide the star schema behind.
+      gold:   { item: warehouse, name: wh_gold }
+    mesh:
+      per_domain: { item: warehouse, name: "wh_{domain}" }
+
+  bronze:
+    item: lakehouse
+    landing_path: "Files/bronze/{source}/{entity}/ingest_date={ingest_date}"
+    table_path: "Tables/{table}"
+    format: delta
+    # Full load, per the brief. ingest_date partitioning still applies: each
+    # run lands a complete snapshot under its own date, so bronze accumulates
+    # history even though the extract itself is not incremental.
+    retention_days: 730
+    immutable: true
+
+  silver:
+    item: lakehouse
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 365
+
+  gold:
+    item: warehouse
+    format: delta
+    schemas:
+      physical: dbo      # star-schema tables written by the gold notebooks
+      reporting: bi      # views consumed by Power BI; never read by a pipeline
+    # OVERWRITE ONLY. `append` fails with `Write orchestration failed` and no
+    # root cause. Every gold build reads, unions and overwrites.
+    write_mode: warehouse_connector
+    staging_path: "Files/staging/gold/{table}"
+
+# git_integration is deliberately absent. It is an audit MIRROR, not a
+# deployment path, and it needs two things no script can do: a tenant admin
+# enabling GitHub sync, and a Fabric connection holding a PAT with `repo`
+# scope. Neither is confirmed for this project. Add the block from
+# framework/templates/fabric/01-scaffolding.yaml once someone has both.
+
+# organise_items.py files only what a folder DECLARES here. Anything not named
+# stays at the workspace root -- and the run reports "0 unmatched" while doing
+# it, because an item nobody planned for was never in the plan.
+workspace_folders:
+  - name: "0_config"
+    layer: null
+    contains:
+      - { item_type: Environment, name: env_spark }
+    subfolders:
+      # Cross-layer operational notebooks. nb_dq_monitor reads bronze, silver
+      # AND gold, so it belongs to no single layer folder.
+      - { name: notebook, contains: [{ item_type: Notebook, name: nb_dq_monitor }] }
+
+  - name: "1_bronze"
+    layer: bronze
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_load_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_load_bronze }] }
+  - name: "2_silver"
+    layer: silver
+    subfolders:
+      # nb_cascade_quarantine is layer work -- run last by p_clean_silver, and
+      # it rewrites silver tables. Named explicitly because it does not match
+      # nb_clean_*.
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_clean_*" },
+                                     { item_type: Notebook, name: nb_cascade_quarantine }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_clean_silver }] }
+  - name: "3_gold"
+    layer: gold
+    subfolders:
+      # nb_build_* also catches nb_build_bi_views and nb_build_audit, both of
+      # which p_build_gold runs after the tables they read.
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_build_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_build_gold }] }
+  - name: "4_master"
+    layer: null
+    subfolders:
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_orchestrate_master }] }
+  - name: "5_datastore"
+    layer: null
+    contains:
+      - { item_type: Lakehouse, name: lh_bronze }
+      - { item_type: Lakehouse, name: lh_silver }
+      - { item_type: Warehouse, name: wh_gold }
+
+  - name: "6_powerbi"
+    layer: null
+    description: >-
+      The reporting surface: the semantic model and every report bound to it.
+
+      Separate from the layer folders because these are consumed rather than
+      run. Nothing here is orchestrated by a pipeline, and the audience is
+      report authors rather than engineers -- for this project, CxO readers.
+    subfolders:
+      - { name: semanticmodel, contains: [{ item_type: SemanticModel, name_pattern: "sm_*" }] }
+      # `*`, not `rpt_*`. A report DEPLOYS under its display_name -- P2
+      # declares `name: rpt_x` for the convention and `display_name` for the
+      # people who open it, and push_reports uses the latter. Matching on `*`
+      # needs no resolution between the two.
+      - { name: report,        contains: [{ item_type: Report, name_pattern: "*" }] }
+
+audit_columns:
+  bronze:
+    - { name: _ingested_at,  type: timestamp, source: current_timestamp() }
+    - { name: _source,       type: string,    source: spec.source_system }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _source_file,  type: string,    source: runtime.input_file_name }
+  silver:
+    - { name: _processed_at, type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _record_hash,  type: string,    source: computed.row_hash }
+  gold:
+    - { name: _built_at,     type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+
+conventions:
+  require_business_key: true
+  require_declared_grain: true
+  require_exhaustive_column_mapping: true
+  require_source_registration: true
+  require_pii_classification: true

@@ -1,0 +1,5 @@
+/// Restricts a viewer to the buildings their persona may see, by filtering User Scope -- which filters Building, which filters Arrivals. READ THIS BEFORE RELYING ON IT. The six personas in the source are application logins (enterprise_admin, property_manager, authorizer), not email addresses, so USERPRINCIPALNAME() matches NOBODY until someone adds a real-user-to-persona mapping table. The filter path and the structure are correct; the identity join is the piece a production deployment has to supply. The failure mode is at least the safe one: a role that matches nobody returns no rows, so a misconfigured viewer sees an empty report rather than another tenant's occupancy. Test with a static persona before assuming it is wired up.
+role 'Building Scope'
+	modelPermission: read
+
+	tablePermission 'User Scope' = [Username] = USERPRINCIPALNAME()

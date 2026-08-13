@@ -1,0 +1,478 @@
+# =============================================================================
+# fabric/02-sources.yaml -- Stage F2
+# =============================================================================
+# The contract with upstream: every system, entity, column and known defect.
+# This is the ONLY place a source column is declared; everything downstream is
+# checked against it.
+#
+# Procedure: ../../AzureFabricMCP/framework/prompts/fabric/02-sources.md
+# Contract : ../../AzureFabricMCP/framework/contracts/fabric/02-sources.schema.json
+#
+# Quote any value containing a comma. In flow style an unquoted comma ends the
+# value and the remainder silently becomes a null-valued key -- the contract
+# sets additionalProperties:false on columns specifically to turn that into a
+# build failure rather than silently discarded documentation.
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: SourceRegistry
+
+metadata:
+  name: pushkar-demo
+  description: >-
+    Kastle access-control data mart, read from the local PostgreSQL `kastle`
+    database and landed as CSV extracts. Fifteen entities: the arrivals fact,
+    five dimensions, a permission/RLS cluster and two key-list tables.
+  scaffolding_ref: 01-scaffolding.yaml
+
+sources:
+  - name: kastle_pg
+    description: >-
+      PostgreSQL 18.3 port of the Kastle_DataMart star schema, running on
+      localhost:5432, database `kastle`, schema `public`. 9.8 MB, sixteen
+      tables of which fifteen are registered here.
+
+      Physically the pipeline reads CSV, not PostgreSQL. This is a property of
+      the framework, not a design preference: generate_notebooks.py emits a
+      `spark.read...csv(landing_path)` reader for every bronze entity and has
+      no JDBC branch, and generate_pipelines.py has no copy activity. Declaring
+      `connection.kind: jdbc` would validate and then generate a notebook that
+      reads files anyway. The extract is therefore explicit -- PostgreSQL is
+      exported to ./data/kastle_pg/*.csv and those files are landed -- so that
+      what runs and what the spec says are the same thing.
+    domain: workplace_access
+    system_type: database
+    owner: data-engineering
+
+    connection:
+      kind: file
+      format: csv
+      location_dev: "./data/kastle_pg"
+      location: "Files/bronze/kastle_pg"
+      options:
+        header: true
+        delimiter: ","
+        encoding: utf-8
+        quote: '"'
+        # NEVER infer. Inference hides schema drift: a column that starts
+        # arriving empty is inferred as string, the load succeeds, and the
+        # type change surfaces three layers later as a failed cast.
+        infer_schema: false
+
+    sla:
+      # No upstream delivery contract exists -- the export is produced on
+      # demand from a local database by the operator running the demo. Recorded
+      # as 24h so freshness monitoring in D1 has a number to compare against,
+      # and flagged here as nominal rather than negotiated.
+      delivery_by: "06:00 IST"
+      freshness_hours: 24
+
+    entities:
+      # -----------------------------------------------------------------
+      # THE FACT
+      # -----------------------------------------------------------------
+      - name: arrivals
+        description: >-
+          One badge read. Grain is one row per cardholder, per building, per
+          date, per MINUTE -- confirmed by measurement, not assumed: 2,000 rows
+          are unique on (card_holder_key, building_key, date_key, time_key) but
+          only 1,911 distinct on (card_holder_key, building_key, date_key). The
+          83-row difference is people entering the same building twice in one
+          day. Any headcount measure must therefore DISTINCTCOUNT the
+          cardholder; counting rows over-reports occupancy by roughly 4%.
+        file_pattern: "vw_fact_arrivals.csv"
+        # The source surrogate. `id` identifies a row, not a real-world thing --
+        # but for an event fact the row IS the thing, so it is the right key
+        # here. The business grain is the four-column combination above, and it
+        # is declared as the fact grain in F5 rather than as a key here.
+        primary_key: [id]
+        watermark_column: null
+        # Full, per the brief. At 2,000 rows an incremental pattern would cost
+        # a watermark column the source does not have, to save nothing.
+        load_pattern: full
+        expected_row_order: 1e3
+        foreign_keys:
+          - { columns: [card_holder_key], references: "kastle_pg.card_holder", references_columns: [card_holder_key] }
+          - { columns: [building_key],    references: "kastle_pg.building",     references_columns: [building_key] }
+          - { columns: [date_key],        references: "kastle_pg.calendar_date", references_columns: [date_key] }
+          - { columns: [time_key],        references: "kastle_pg.time_of_day",  references_columns: [time_key] }
+          - { columns: [reader_key],      references: "kastle_pg.reader_detail", references_columns: [reader_key] }
+        # Column ORDER matches vw_fact_arrivals.csv exactly. The bronze notebook
+        # applies this schema POSITIONALLY and re-reads the header without it to
+        # compare -- two same-typed columns swapped would otherwise load into
+        # each other in total silence.
+        columns:
+          - { name: id,                     type: integer, nullable: false, description: "Source surrogate for one badge read" }
+          - { name: card_holder_key,        type: integer, nullable: true,  description: "FK to card_holder. Zero nulls and zero orphans measured" }
+          # The natural key, denormalised onto the fact. Not classified `pii`:
+          # the contract's enum offers only name/email/phone/address/
+          # government_id/financial/health and has no category for a
+          # pseudonymous identifier. This is a random 36-char GUID carrying no
+          # name or contact detail, and masking it would break the join to
+          # permission_shared.cardholder_kastle_guid that row-level security
+          # depends on. Recorded here so the decision is visible rather than
+          # implied by an absent field.
+          - { name: card_holder,            type: string,  nullable: true,  description: "Kastle GUID, 36 chars. Pseudonymous identifier - resolves to a person only inside the source system" }
+          - { name: card_holder_inst_key,   type: integer, nullable: true,  description: "Institution the cardholder belongs to" }
+          - { name: building_key,           type: integer, nullable: true,  description: "FK to building. Zero nulls and zero orphans measured" }
+          - { name: date_key,               type: integer, nullable: true,  description: "FK to calendar_date, yyyymmdd form" }
+          - { name: time_key,               type: integer, nullable: true,  description: "FK to time_of_day, minute of day 0-1439" }
+          - { name: reader_key,             type: integer, nullable: true,  description: "FK to reader_detail" }
+          - { name: user_type,              type: integer, nullable: false, domain_values: [1, 2], description: "1 Personnel, 2 Visitor" }
+          - { name: hour,                   type: integer, nullable: false, description: "Hour 0-23, denormalised from time_of_day. Zero disagreements measured" }
+          - { name: used_presence_this_day, type: integer, nullable: false, domain_values: [0, 1], description: "Flag, 154 of 2000 set" }
+          - { name: is_enrolled_today,      type: integer, nullable: false, domain_values: [0, 1], description: "Flag, 296 of 2000 set" }
+          - { name: company,                type: string,  nullable: true,  description: "Institution name denormalised from institution. 30 distinct, matching the 30 institution rows" }
+          - { name: user_type_label,        type: string,  nullable: true,  domain_values: ["Personnel", "Visitor"], description: "Label for user_type. Redundant, kept because the source carries it" }
+
+      # -----------------------------------------------------------------
+      # DIMENSIONS
+      # -----------------------------------------------------------------
+      - name: card_holder
+        description: >-
+          One person who holds an access card. 300 rows. The natural key is
+          `card_holder` -- the Kastle GUID -- NOT `card_holder_key`: the
+          integer is a data-mart surrogate that can be reassigned if the mart
+          is rebuilt, at which point history would reattach to the wrong
+          person. The GUID is also what permission_shared joins on.
+        file_pattern: "vw_dim_card_holder.csv"
+        primary_key: [card_holder]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e2
+        columns:
+          - { name: card_holder_key,            type: integer, nullable: false, description: "Source surrogate. Carried for the fact join, not used as the key" }
+          - { name: card_holder,                type: string,  nullable: false, description: "Kastle GUID, 36 chars, unique across all 300 rows. THE natural key" }
+          - { name: is_active_in_last_30_days,  type: integer, nullable: false, domain_values: [0, 1], description: "210 of 300 active" }
+          - { name: is_active_in_last_60_days,  type: integer, nullable: false, domain_values: [0, 1], description: "251 of 300 active" }
+          - { name: is_active_in_last_90_days,  type: integer, nullable: false, domain_values: [0, 1], description: "277 of 300 active" }
+          # Constant 1 across every row -- see CON-001. Declared with its real
+          # domain_values of [1] rather than [0,1], so the spec states what the
+          # data actually contains instead of what the column name promises.
+          - { name: is_active_in_last_365_days, type: integer, nullable: false, domain_values: [1], description: "ALWAYS 1. Carries no information - see CON-001" }
+
+      - name: building
+        description: >-
+          One office building. 5 rows, all Manhattan towers. `building_key` is
+          the key: the name is unique today but is a label, and buildings get
+          renamed while their key does not.
+        file_pattern: "vw_dim_building.csv"
+        primary_key: [building_key]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e0
+        columns:
+          - { name: building_key, type: integer, nullable: false, description: "Natural key" }
+          - { name: building,     type: string,  nullable: false, description: "Display name, e.g. 30 Hudson Yards" }
+
+      - name: calendar_date
+        description: >-
+          One calendar day. 104 rows, 2025-11-01 to 2026-02-12, contiguous --
+          rows, distinct dates and span all equal 104. Named calendar_date
+          rather than date because `date` is a reserved word in enough dialects
+          to be worth avoiding in a generated table name.
+        file_pattern: "vw_dim_date.csv"
+        primary_key: [date_key]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e2
+        columns:
+          - { name: date_key,       type: integer, nullable: false, description: "yyyymmdd" }
+          - { name: date,           type: date,    nullable: false, description: "The day itself" }
+          - { name: is_work_day,    type: integer, nullable: false, domain_values: [0, 1], description: "70 of 104 are work days" }
+          - { name: day_is_holiday, type: integer, nullable: false, domain_values: [0, 1], description: "4 of 104 are holidays" }
+          # A frozen relative-date label -- see STA-001. It buckets the 104 days
+          # into Last 30/60/90/365 Days as at generation time, so it means the
+          # wrong window the day after the table is built.
+          - { name: date_range,     type: string,  nullable: true,  domain_values: ["Last 30 Days", "Last 60 Days", "Last 90 Days", "Last 365 Days"], description: "Frozen relative-date bucket - see STA-001" }
+          - { name: day,            type: string,  nullable: true,  description: "Day name, e.g. Monday" }
+
+      - name: time_of_day
+        description: >-
+          One minute of the day. 1,440 rows, time_key 0-1439, carrying only the
+          hour it falls in. A minute dimension whose sole attribute is the hour
+          -- everything finer has to come from the fact's own time_key.
+        file_pattern: "vw_dim_time.csv"
+        primary_key: [time_key]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e3
+        columns:
+          - { name: time_key, type: integer, nullable: false, description: "Minute of day, 0-1439" }
+          - { name: hour,     type: integer, nullable: false, description: "0-23" }
+
+      - name: enterprise
+        description: >-
+          One enterprise. 30 rows and exactly ONE column -- a key and nothing
+          else. It is a key list rather than a dimension: there is no attribute
+          to put on an axis or in a slicer, so nothing downstream can display
+          it. Registered because the permission patterns reference it.
+        file_pattern: "vw_dim_enterprise.csv"
+        primary_key: [enterprise_id]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        columns:
+          - { name: enterprise_id, type: integer, nullable: false, description: "The only column this table has" }
+
+      - name: institution
+        description: >-
+          One company occupying space in a building. 30 rows. The source table
+          is named ncbldginstitution, unprefixed and unpunctuated; the entity
+          is named for what a row IS, and file_pattern carries the real
+          filename.
+        file_pattern: "ncbldginstitution.csv"
+        primary_key: [ncinstid]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        foreign_keys:
+          - { columns: [building_id], references: "kastle_pg.building", references_columns: [building_key] }
+        columns:
+          - { name: ncinstid,         type: integer, nullable: false, description: "Natural key" }
+          - { name: institution_name, type: string,  nullable: false, description: "Company name, e.g. Ralph Lauren Corporation. Matches arrivals.company" }
+          - { name: building_id,      type: integer, nullable: true,  description: "FK to building" }
+          - { name: institution_key,  type: integer, nullable: true,  description: "Second surrogate, distinct from ncinstid" }
+
+      # -----------------------------------------------------------------
+      # PERMISSION / RLS CLUSTER
+      # -----------------------------------------------------------------
+      # These carry no measures and answer no business question alone. They
+      # exist to SCOPE the arrivals star to whoever is looking at it.
+      - name: permission_shared
+        description: >-
+          One cardholder's visibility grant, per institution and building. 300
+          rows, one per cardholder -- every cardholder has exactly one, measured.
+          Joins to card_holder on the GUID, which is why that GUID is not masked.
+        file_pattern: "vw_permission_shared.csv"
+        primary_key: [id]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e2
+        foreign_keys:
+          - { columns: [building_key], references: "kastle_pg.building", references_columns: [building_key] }
+          - { columns: [cardholder_kastle_guid], references: "kastle_pg.card_holder", references_columns: [card_holder] }
+        columns:
+          - { name: id,                        type: integer, nullable: false, description: "Row key" }
+          - { name: nc_inst_id,                type: integer, nullable: true,  description: "Institution" }
+          - { name: instkey,                   type: integer, nullable: true,  description: "Institution surrogate" }
+          - { name: building_key,              type: integer, nullable: true,  description: "FK to building" }
+          - { name: cardholder_kastle_guid,    type: string,  nullable: true,  description: "Kastle GUID. Same value as card_holder.card_holder - the RLS join" }
+          - { name: card_holder_sees_presence, type: integer, nullable: false, domain_values: [0, 1], description: "Whether this cardholder may see presence data" }
+
+      - name: permission_building
+        description: >-
+          Buildings visible to the signed-in user. 5 rows. Note the column is
+          `buildingkey`, unpunctuated, where every other table uses
+          `building_key` -- see NAM-001.
+        file_pattern: "vw_permission_building.csv"
+        primary_key: [buildingkey]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e0
+        foreign_keys:
+          - { columns: [buildingkey], references: "kastle_pg.building", references_columns: [building_key] }
+        columns:
+          - { name: buildingkey, type: integer, nullable: false, description: "FK to building. Spelled without the underscore, unlike everywhere else" }
+          - { name: building,    type: string,  nullable: false, description: "Display name" }
+
+      - name: reader_detail
+        description: >-
+          One card reader and whether it is public or scoped. 20 rows. `ismatch`
+          drives the public-versus-private branch in the personnel counting
+          logic: 0 is public access, 1 is private/scoped.
+        file_pattern: "vw_auth_admin_reader_details.csv"
+        primary_key: [reader_key]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        columns:
+          - { name: reader_key, type: integer, nullable: false, description: "Natural key" }
+          - { name: ismatch,    type: integer, nullable: false, domain_values: [0, 1], description: "0 public access, 1 private/scoped" }
+
+      - name: reader_inst_mapping
+        description: >-
+          Which institution a reader in a building belongs to. 20 rows. Used to
+          resolve arrivals to a company when the reader, not the cardholder,
+          determines scope.
+        file_pattern: "vw_reader_inst_mapping.csv"
+        primary_key: [id]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        columns:
+          - { name: id,                  type: integer, nullable: false, description: "Row key" }
+          - { name: reader_building_key, type: integer, nullable: true,  description: "Building the reader sits in" }
+          - { name: inst_key,            type: integer, nullable: true,  description: "Institution surrogate" }
+          - { name: institution_id,      type: integer, nullable: true,  description: "Institution id" }
+
+      - name: bridge_ent_inst
+        description: >-
+          Bridge from enterprises to institutions. 30 rows and one column, so
+          it currently bridges nothing -- it carries the institution side only.
+          Registered as the source has it; see KEY-001.
+        file_pattern: "vw_bridge_ent_inst.csv"
+        primary_key: [inst_id]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        columns:
+          - { name: inst_id, type: integer, nullable: false, description: "Institution id. The enterprise side of the bridge is absent" }
+
+      - name: delegated_public_reader
+        description: >-
+          Reader keys for non-owned public space. 10 rows. Paired with
+          owned_reader in the union that decides which readers a viewer may
+          count. Note the column is `readerkey`, unpunctuated - see NAM-001.
+        file_pattern: "delegated_public.csv"
+        primary_key: [readerkey]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        foreign_keys:
+          - { columns: [readerkey], references: "kastle_pg.reader_detail", references_columns: [reader_key] }
+        columns:
+          - { name: readerkey, type: integer, nullable: false, description: "FK to reader_detail. Spelled without the underscore" }
+
+      - name: owned_reader
+        description: >-
+          Reader keys for delegated, owned space. 10 rows. The complement of
+          delegated_public_reader; together they cover all 20 readers.
+        file_pattern: "other_than_delegated_public.csv"
+        primary_key: [reader_key]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e1
+        foreign_keys:
+          - { columns: [reader_key], references: "kastle_pg.reader_detail", references_columns: [reader_key] }
+        columns:
+          - { name: reader_key, type: integer, nullable: false, description: "FK to reader_detail" }
+
+      - name: user_security
+        description: >-
+          One application persona and the scope it may see. 6 rows. This is the
+          source of row-level security in P1.
+
+          The sibling table `kastle_users` is deliberately NOT registered: it
+          holds password_hash, email and full_name for six demo logins and has
+          no analytical value. An unregistered entity cannot reach bronze, so
+          excluding it here is the control, not a later masking rule.
+        file_pattern: "kastle_user_security.csv"
+        primary_key: [username]
+        watermark_column: null
+        load_pattern: full
+        expected_row_order: 1e0
+        columns:
+          - { name: id,           type: integer,   nullable: false, description: "Row key" }
+          - { name: username,     type: string,    nullable: false, description: "Persona login, e.g. enterprise_admin. A role name, not a person" }
+          - { name: persona,      type: string,    nullable: false, description: "Persona class, equal to username in all 6 rows" }
+          - { name: building_keys, type: string,   nullable: false, description: "JSON array of building_key, e.g. [1, 2, 3, 4, 5]. Stored as text - see JSN-001" }
+          - { name: inst_ids,     type: string,    nullable: true,  description: "JSON array of institution ids. Null for 4 of 6 personas - see NUL-001" }
+          - { name: reader_type,  type: string,    nullable: false, description: "delegated or public" }
+          - { name: own_inst_id,  type: integer,   nullable: true,  description: "Owning institution. Null for 4 of 6 personas - see NUL-001" }
+          - { name: description,  type: string,    nullable: true,  description: "Human-readable scope note" }
+          - { name: created_at,   type: timestamp, nullable: false, description: "Row creation" }
+          - { name: updated_at,   type: timestamp, nullable: false, description: "Row update. Not usable as a watermark - all 6 rows share one timestamp" }
+
+# =============================================================================
+# Known defects
+# =============================================================================
+# Every rate below was MEASURED against the live database, not estimated.
+# Thresholds in D1 are calibrated from these (warn ~1.5x, fail ~2.5x), so a
+# guessed rate produces a threshold that either never fires or always fires --
+# and the second gets muted within a week.
+#
+# Every id here must be handled by a silver rule, and `coverage` in validate.py
+# proves it. A defect nobody wrote down becomes a silent correction nobody can
+# explain later.
+known_issues:
+  - id: CAL-001
+    entity: calendar_date
+    description: >-
+      The date dimension spans only 104 days, 2025-11-01 to 2026-02-12, and
+      ends exactly at the latest fact date. Power BI time intelligence --
+      SAMEPERIODLASTYEAR, DATEADD, TOTALYTD -- requires a date table covering
+      whole calendar years. Against this table those functions return BLANK
+      rather than raising, so every year-over-year tile on an executive
+      dashboard renders empty and looks like a data gap rather than a modelling
+      fault. This is the single most consequential defect in the source.
+    observed_rate: 1.0
+    handled_by: silver.stg_calendar_date.extend_calendar_to_full_years
+
+  - id: DUP-001
+    entity: arrivals
+    description: >-
+      The same cardholder enters the same building more than once on the same
+      day in 83 of 2,000 rows. These are legitimate re-entries, not duplicate
+      records, so they must NOT be deduplicated -- the defect is that a naive
+      row count reads them as 83 extra people. Recorded so the grain is
+      enforced rather than assumed, and so headcount is a distinct count.
+    observed_rate: 0.0415
+    handled_by: silver.stg_arrivals.assert_grain_cardholder_building_date_minute
+
+  - id: CON-001
+    entity: card_holder
+    description: >-
+      is_active_in_last_365_days is 1 for all 300 cardholders, so the 365-day
+      option of the active-period selector reports every cardholder as active
+      regardless of filter. The 30, 60 and 90 day flags do vary (210, 251 and
+      277 active respectively), which makes the dead one harder to notice --
+      three of four options behave and the fourth silently does not.
+    observed_rate: 1.0
+    handled_by: silver.stg_card_holder.recompute_active_flags_from_arrivals
+
+  - id: STA-001
+    entity: calendar_date
+    description: >-
+      date_range holds a relative-window label frozen at generation time --
+      Last 30 Days on 31 rows, Last 60 on 30, Last 90 on 30, Last 365 on 13.
+      The existing Power BI model uses it as an averaging denominator, so the
+      denominator silently drifts: a day after this table is built, Last 30
+      Days names the wrong thirty days and every per-day average computed from
+      it is wrong by a margin nobody can see.
+    observed_rate: 1.0
+    handled_by: silver.stg_calendar_date.recompute_date_range_from_current_date
+
+  - id: NUL-001
+    entity: user_security
+    description: >-
+      inst_ids and own_inst_id are null for 4 of the 6 personas. Row-level
+      security derived from these columns under-scopes silently: an affected
+      user sees fewer institutions than their persona should permit, and
+      because RLS failures show as missing rows rather than as errors, nobody
+      is told. Null must be resolved to an explicit all-or-none decision.
+    observed_rate: 0.6667
+    handled_by: silver.stg_user_security.resolve_null_scope_to_explicit
+
+  - id: JSN-001
+    entity: user_security
+    description: >-
+      building_keys and inst_ids hold JSON arrays inside text columns, e.g.
+      "[1, 2, 3, 4, 5]". A star schema cannot join on an array, so these must
+      be exploded to one row per persona per key before RLS can filter on them.
+      Left as text they would compare as strings and match nothing.
+    observed_rate: 1.0
+    handled_by: silver.stg_user_security.explode_json_scope_arrays
+
+  - id: KEY-001
+    entity: bridge_ent_inst
+    description: >-
+      The enterprise-to-institution bridge carries only the institution side --
+      one column, inst_id, 30 rows. A bridge with one side cannot resolve a
+      many-to-many, so any measure that tries to attribute arrivals to an
+      enterprise has no path. The enterprise dimension has the same problem
+      from the other end: 30 rows, one column, no attributes.
+    observed_rate: 1.0
+    handled_by: silver.stg_bridge_ent_inst.flag_incomplete_bridge
+
+  - id: NAM-001
+    entity: permission_building
+    description: >-
+      Building and reader keys are spelled inconsistently across the source:
+      buildingkey in permission_building and readerkey in
+      delegated_public_reader, against building_key and reader_key everywhere
+      else. Joins written from memory against the majority spelling fail at
+      runtime on exactly these two tables, and a join that fails to a null
+      looks like missing data rather than a typo.
+    observed_rate: 1.0
+    handled_by: silver.stg_permission_building.normalise_key_column_names

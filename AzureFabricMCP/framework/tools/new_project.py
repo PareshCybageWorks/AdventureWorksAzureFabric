@@ -317,12 +317,12 @@ def main() -> int:
 
     print()
     print("Validation fails until they are filled in. That is the intended state:")
-    print(f"  python framework/generators/validate.py --project {args.name}")
+    print(f"  python AzureFabricMCP/framework/generators/validate.py --project {args.name}")
     print()
     print("To fill them in as a conversation rather than by hand, follow")
     print("framework/prompts/00-interview.md. To find out where you are at any")
     print("point -- including in a session that has lost all context:")
-    print(f"  python framework/tools/project_status.py --project {args.name}")
+    print(f"  python AzureFabricMCP/framework/tools/project_status.py --project {args.name}")
     return 0
 
 

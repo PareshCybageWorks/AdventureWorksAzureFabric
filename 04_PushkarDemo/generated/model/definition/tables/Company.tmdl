@@ -1,0 +1,30 @@
+/// Companies occupying space in the buildings. Type1, so it reflects the CURRENT building assignment -- historical attribution comes from the Company column on Arrivals instead.
+table Company
+	lineageTag: 6c14bab8-9a72-58f3-b564-7b193574a453
+
+	column 'Company ID'
+		dataType: int64
+		isHidden
+		sourceColumn: institution_id
+		summarizeBy: none
+		lineageTag: 8703a49a-185c-58ea-a0eb-fbff159250c6
+
+	column 'Company Name'
+		dataType: string
+		sourceColumn: institution_name
+		summarizeBy: none
+		lineageTag: d826bc0c-9373-511b-876e-41d2255ee6b3
+
+	column institution_sk
+		dataType: int64
+		isHidden
+		sourceColumn: institution_sk
+		summarizeBy: none
+		lineageTag: 87e6b84a-973d-56a6-820a-16d2c2694d55
+
+	partition Company = entity
+		mode: directLake
+		source
+			entityName: dim_institution
+			schemaName: dbo
+			expressionSource: DatabaseQuery

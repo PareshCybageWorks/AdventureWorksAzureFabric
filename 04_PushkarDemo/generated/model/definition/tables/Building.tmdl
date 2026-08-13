@@ -1,0 +1,30 @@
+/// The five Manhattan office buildings.
+table Building
+	lineageTag: 1f0e7f0b-3fae-5016-9329-367b847f541c
+
+	column 'Building ID'
+		dataType: int64
+		isHidden
+		sourceColumn: building_key
+		summarizeBy: none
+		lineageTag: 8dbeec88-2aec-506d-969b-f3fcc339e037
+
+	column Building
+		dataType: string
+		sourceColumn: building_name
+		summarizeBy: none
+		lineageTag: a9e4264e-a873-5643-9852-d380d64c97f2
+
+	column building_sk
+		dataType: int64
+		isHidden
+		sourceColumn: building_sk
+		summarizeBy: none
+		lineageTag: da676923-5309-504f-b570-94748b89c171
+
+	partition Building = entity
+		mode: directLake
+		source
+			entityName: dim_building
+			schemaName: dbo
+			expressionSource: DatabaseQuery

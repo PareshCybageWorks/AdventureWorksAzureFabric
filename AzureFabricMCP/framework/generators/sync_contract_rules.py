@@ -93,7 +93,7 @@ def main() -> int:
             print(f"           in the library but not the contract: {added}")
         if removed:
             print(f"           in the contract but not the library: {removed}")
-        print("         run: python framework/generators/sync_contract_rules.py")
+        print("         run: python AzureFabricMCP/framework/generators/sync_contract_rules.py")
         return 1
 
     contract.setdefault("$defs", {}).setdefault("ruleName", {})

@@ -1,0 +1,232 @@
+/// One badge read: one row per person, per building, per day, per minute. NOT one row per person per day -- 83 of 2,000 rows are a second entry by the same person on the same day. Headcount is therefore Distinct People, never a row count.
+table Arrivals
+	lineageTag: ecd60f7e-6cd7-57ea-8315-e3d8cbec709e
+
+	column 'Line Arrivals'
+		dataType: int64
+		isHidden
+		sourceColumn: arrival_count
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: 776599ca-3823-53ae-8ece-9812eb151274
+
+	column 'Line Personnel'
+		dataType: int64
+		isHidden
+		sourceColumn: personnel_arrivals
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: 703b7e8d-36e2-52d9-98b2-79898fc47063
+
+	column 'Line Visitors'
+		dataType: int64
+		isHidden
+		sourceColumn: visitor_arrivals
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: 066095f1-670d-5296-858e-9cdfcd9bdc37
+
+	column 'Line Presence Used'
+		dataType: int64
+		isHidden
+		sourceColumn: presence_used_count
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: decf38e4-cc67-59fa-91d7-08cef10a6aff
+
+	column 'Line Enrolled Today'
+		dataType: int64
+		isHidden
+		sourceColumn: enrolled_today_count
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: 46d6cd43-895f-54a2-b1e3-fd187dca4811
+
+	column 'Arrival ID'
+		dataType: int64
+		isHidden
+		sourceColumn: arrival_id
+		summarizeBy: none
+		lineageTag: b3102022-6921-5596-87fd-fa018083698f
+
+	column 'User Type Code'
+		dataType: int64
+		isHidden
+		sourceColumn: user_type
+		summarizeBy: none
+		lineageTag: 35983bee-b126-5a38-a8da-235f8fce6d77
+
+	/// Personnel or Visitor
+	column 'User Type'
+		dataType: string
+		sourceColumn: user_type_label
+		summarizeBy: none
+		lineageTag: 8e8972c9-59ea-5e95-adae-4da92df6efee
+
+	/// 0-23, denormalised from the Time dimension
+	column 'Arrival Hour'
+		dataType: int64
+		sourceColumn: hour_of_day
+		summarizeBy: none
+		lineageTag: cc44bc11-435e-5de0-a493-87568968e3c9
+
+	/// The company the cardholder belonged to AT THE TIME of the arrival. Read from the fact rather than the Company dimension, which is type1 and no longer holds the past
+	column Company
+		dataType: string
+		sourceColumn: company_name
+		summarizeBy: none
+		lineageTag: 283cb609-b23e-5e00-bfc6-d259e1c746c0
+
+	column arrival_date_sk
+		dataType: int64
+		isHidden
+		sourceColumn: arrival_date_sk
+		summarizeBy: none
+		lineageTag: 8ba590a0-2972-5d41-9781-6fdb6104abe3
+
+	column arrival_time_sk
+		dataType: int64
+		isHidden
+		sourceColumn: arrival_time_sk
+		summarizeBy: none
+		lineageTag: 974d78e0-c45b-5c19-b62f-04d6ff8c4212
+
+	column building_sk
+		dataType: int64
+		isHidden
+		sourceColumn: building_sk
+		summarizeBy: none
+		lineageTag: 96ae2f15-fd10-5f8d-aa70-b4c73440008f
+
+	column card_holder_sk
+		dataType: int64
+		isHidden
+		sourceColumn: card_holder_sk
+		summarizeBy: none
+		lineageTag: a807f872-8e31-5c8b-a4c0-939544173b2a
+
+	column reader_sk
+		dataType: int64
+		isHidden
+		sourceColumn: reader_sk
+		summarizeBy: none
+		lineageTag: 1eccca89-5fc1-55eb-a99f-ff21181a33d0
+
+	/// Unique people who badged in, in the current filter. THIS is headcount, not Total Arrivals -- 83 of 2,000 rows are someone re-entering the same building on the same day, so counting rows over-reports by about 4%. Not additive across any dimension: the distinct people in two buildings is not the sum of each, which is why it is a measure and not a column.
+	measure 'Distinct People' = DISTINCTCOUNT(Arrivals[card_holder_sk])
+		formatString: #,0
+		displayFolder: Occupancy
+		lineageTag: 18554d4d-3148-5123-9805-e6429ae628ee
+
+	/// Badge reads in the current filter. An event count, not a headcount.
+	measure 'Total Arrivals' = SUM(Arrivals[Line Arrivals])
+		formatString: #,0
+		displayFolder: Occupancy
+		lineageTag: 62281eb1-57c5-50c2-ac55-496ebe4e4a24
+
+	/// Mean distinct people per day across the days in filter. Iterates over dates rather than dividing, because dividing a non-additive distinct count by a day count gives a different and wrong answer.
+	measure 'Avg Daily People' = AVERAGEX(VALUES('Date'[Date]), [Distinct People])
+		formatString: #,0.0
+		displayFolder: Occupancy
+		lineageTag: a4ce5c31-743c-5b36-9bbd-6283d6b24f00
+
+	/// The busiest single day in the current filter, by distinct people.
+	measure 'Peak Daily People' = MAXX(VALUES('Date'[Date]), [Distinct People])
+		formatString: #,0
+		displayFolder: Occupancy
+		lineageTag: d66a160d-6f29-57fc-b5c0-71b207cc78b3
+
+	/// Badge reads per person. Above 1.0 means re-entries. DIVIDE, not "/", so an empty denominator returns blank rather than an error.
+	measure 'Arrivals per Person' = DIVIDE([Total Arrivals], [Distinct People])
+		formatString: #,0.00
+		displayFolder: Occupancy
+		lineageTag: 87570999-9de6-5e8e-a114-7b45c422681d
+
+	/// Arrivals on days the calendar marks as working days (70 of the 104 real days).
+	measure 'Work Day Arrivals' = CALCULATE([Total Arrivals], 'Date'[Is Work Day] = 1)
+		formatString: #,0
+		displayFolder: Arrival Pattern
+		lineageTag: f7ff5181-5a04-5296-9bdf-76f88ec1213e
+
+	/// Working days in the current filter. Generated padding days carry a null Is Work Day and so are excluded -- deliberately, because a fabricated working day would land in this denominator.
+	measure 'Work Days in Period' = CALCULATE(COUNTROWS('Date'), 'Date'[Is Work Day] = 1)
+		formatString: #,0
+		displayFolder: Arrival Pattern
+		lineageTag: 7c4f794d-c6cf-54ae-a733-d0d0cc171342
+
+	measure 'Avg Arrivals per Work Day' = DIVIDE([Work Day Arrivals], [Work Days in Period])
+		formatString: #,0.0
+		displayFolder: Arrival Pattern
+		lineageTag: 880edd22-f3a8-52e7-b7ac-522489c38616
+
+	/// Arrivals by staff rather than visitors. 1,696 of 2,000 in the full dataset.
+	measure 'Personnel Arrivals' = SUM(Arrivals[Line Personnel])
+		formatString: #,0
+		displayFolder: Arrival Pattern
+		lineageTag: 4110222e-24af-5815-8aeb-6d78a446ae57
+
+	/// Arrivals by visitors. 304 of 2,000 in the full dataset.
+	measure 'Visitor Arrivals' = SUM(Arrivals[Line Visitors])
+		formatString: #,0
+		displayFolder: Arrival Pattern
+		lineageTag: c872113a-20f4-5013-a326-35b0f56ded06
+
+	measure 'Personnel Share %' = DIVIDE([Personnel Arrivals], [Total Arrivals])
+		formatString: 0.0%
+		displayFolder: Arrival Pattern
+		lineageTag: 099f33df-7283-5400-ab7f-107394ef7ad5
+
+	/// Companies with at least one arrival in the current filter, counted from the company recorded on the arrival itself.
+	measure 'Companies Present' = DISTINCTCOUNT(Arrivals[Company])
+		formatString: #,0
+		displayFolder: Company Presence
+		lineageTag: 41214a8a-2949-5232-829a-e56c9ba400a8
+
+	/// Mean distinct people per company with any presence.
+	measure 'People per Company' = DIVIDE([Distinct People], [Companies Present])
+		formatString: #,0.0
+		displayFolder: Company Presence
+		lineageTag: 05dfa540-cb58-51aa-8c32-729b3964a27d
+
+	/// Days that actually have arrivals, not calendar days in the range. The report shows 66 for a 91-day window, which is what identified this: it counts days with data, so weekends and holidays drop out on their own.
+	measure 'Total Days' = COUNTROWS(SUMMARIZE(Arrivals, 'Date'[Date]))
+		formatString: #,0
+		displayFolder: Kastle Insights
+		lineageTag: f5255d1b-fcc9-5cc1-9e58-56e4c6a5ba0a
+
+	/// Occupancy over a range: the daily average of unique people divided by the unique people seen anywhere in the range. Answers "on a typical day, what share of the population that uses this space is in it".
+	measure 'Active Plus' = DIVIDE([Avg Daily People], [Distinct People])
+		formatString: 0%
+		displayFolder: Kastle Insights
+		lineageTag: 15a1e937-4fb7-52ae-a716-5e01c8ca86c1
+
+	/// The same ratio at the busiest single day rather than the average -- the practical ceiling on how full the space gets.
+	measure 'Max Active Plus' = DIVIDE([Peak Daily People], [Distinct People])
+		formatString: 0%
+		displayFolder: Kastle Insights
+		lineageTag: 4bd8003b-22b6-5f3f-aa48-895174c66d1f
+
+	/// Average days per week an individual comes in. DEFINITION NOT RECOVERABLE from the screenshots -- the printed 1.41 could not be reproduced from the other figures on the page, so this is a reasonable reading (mean distinct attendance days per person, over the weeks the range covers) rather than a reconstruction of Kastle's formula. Confirm before quoting it.
+	measure 'Avg Days Per Week' = DIVIDE(AVERAGEX(VALUES(Cardholder[Cardholder ID]), CALCULATE(COUNTROWS(SUMMARIZE(Arrivals, 'Date'[Date])))), DIVIDE([Total Days], 7))
+		formatString: #,0.00
+		displayFolder: Kastle Insights
+		lineageTag: 7e4f3f48-82d1-5147-b1d1-5396b9321d49
+
+	/// People who used a mobile credential at least once in the range. ASSUMPTION, stated because a whole report page rests on it: `used_presence_this_day` is taken to mean the Kastle Presence mobile credential. That is the product name, and nothing else in the source carries mobile-credential semantics -- but it has NOT been confirmed with Kastle, and there is no numeric corroboration. An earlier note here claimed the ratios agreed; they do not. The report's 8% is person-level (2,064 of 25,316 people) while this source's 7.7% was arrival-level (154 of 2,000 rows). Person-level here is 95 of 300, or 32%, which says nothing either way on synthetic data. WRITTEN THE LONG WAY ON PURPOSE. The obvious form, CALCULATE([Distinct People], Arrivals[Line Presence Used] = 1), fails at query time on this DirectLake model: the column aggregates (SUM returns 154, MIN/MAX return 0 and 1) but cannot be scanned as a filter -- even a bare VALUES() on it errors, while the same operations on Arrivals[Line Arrivals] succeed. The cause is not established. This form uses only operations proven to work against the deployed model, and it states the intent directly: a person who used it on any day in range.
+	measure 'Used Mobile Credential' = COUNTROWS(FILTER(VALUES(Cardholder[Cardholder ID]), CALCULATE(SUM(Arrivals[Line Presence Used])) > 0))
+		formatString: #,0
+		displayFolder: Mobile Credential
+		lineageTag: 82a259fd-c789-5977-a383-30a4f76a256c
+
+	/// Share of people in the range who used a mobile credential at least once.
+	measure 'Mobile Credential Usage %' = DIVIDE([Used Mobile Credential], [Distinct People])
+		formatString: 0%
+		displayFolder: Mobile Credential
+		lineageTag: 7a23d3a4-2938-5b0d-ace0-f9a3a4b86a39
+
+	partition Arrivals = entity
+		mode: directLake
+		source
+			entityName: fct_arrivals
+			schemaName: dbo
+			expressionSource: DatabaseQuery

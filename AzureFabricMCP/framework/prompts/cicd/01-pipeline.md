@@ -75,15 +75,15 @@ mode is a spec that documents an approval nobody ever configured.
 ## Then
 
 ```bash
-python framework/generators/validate.py           --project <p> --track cicd
-python framework/generators/generate_workflows.py --specs   <p> --out <repo-root>
+python AzureFabricMCP/framework/generators/validate.py           --project <p> --track cicd
+python AzureFabricMCP/framework/generators/generate_workflows.py --specs   <p> --out <repo-root>
 ```
 
 Then **run the CI job locally before pushing it**:
 
 ```bash
-python framework/generators/validate.py --project <p>
-python framework/tests/test_monitoring.py
+python AzureFabricMCP/framework/generators/validate.py --project <p>
+python AzureFabricMCP/framework/tests/test_monitoring.py
 ```
 
 A workflow whose first real execution is on a pull request is a workflow whose

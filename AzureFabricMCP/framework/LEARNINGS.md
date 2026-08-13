@@ -136,6 +136,201 @@ Ask the source, do not assume the product:
 
 ---
 
+## Workspace organisation: silent in both directions
+
+**`organise_items` files only what a folder DECLARES**, and reports
+`0 unmatched` while leaving everything else at the root — an item nobody
+planned for was never in the plan, so nothing counts it as missing.
+
+The shipped template stopped at `5_datastore`, so **every project built from it
+left four items loose**:
+
+| Item | Why no folder caught it |
+|---|---|
+| `nb_cascade_quarantine` | does not match `nb_clean_*` |
+| `nb_dq_monitor` | reads all three layers, belongs to none |
+| the semantic model | no Power BI folder existed |
+| the report | same |
+
+The last two are the items a business user actually opens, which made them the
+two hardest to find in a workspace where every notebook was neatly filed.
+
+Fixed in the template (now declares `6_powerbi/semanticmodel`,
+`6_powerbi/report`, and the two notebooks explicitly) and enforced by
+`folder-coverage` in `validate.py`, which derives every item the generators
+will produce and fails when one has no folder.
+
+**A report deploys under its `display_name`, not its spec `name`.** `02-reports`
+declares `name: rpt_x` for the `naming.report` convention and `display_name`
+for the people who open it; `push_reports` uses the latter. So a folder entry
+written in the framework's own convention (`rpt_*`) matched nothing.
+`organise_items` now resolves one to the other, and the template matches
+reports on `*`.
+
+---
+
+## The framework hardcodes its own location
+
+When the framework moved to `AzureFabricMCP/framework`, **75 CI step paths
+across two projects broke at once**, plus 66 documented invocations in its own
+prompts, INDEX and tool help. Step paths are relative to the repository root,
+so a relocation invalidates every one of them, and a workflow only fails when
+CI is already running.
+
+`cicd-scripts` caught the step paths in seconds. Nothing catches the prompts —
+they are prose, and a stage prompt telling you to run a path that no longer
+exists costs the next person time before they have written a line.
+
+If the framework moves again: repoint `cicd/01-pipeline.yaml` step paths and
+`metadata.framework_path` in every project, then `python framework/` → the new
+prefix across `framework/**/*.{py,md}`. Run `validate.py` afterwards; it is the
+only part that self-checks.
+
+---
+
+## A pipeline RETRY duplicates a full-snapshot bronze table
+
+The entry above says bronze re-appends its whole source *on every run*, and
+prescribes a watermark. This is the same corruption reached by a shorter path:
+**one run is enough.**
+
+`load_pattern: full` with `write_mode: append` — the only write mode the
+contract permits — means a retried notebook lands a second complete snapshot.
+Four of fifteen bronze notebooks hit a Spark capacity limit on one contended
+run, the pipeline retried them automatically, and each appended a second copy.
+**300 cardholders became 600; 5 buildings became 10; 1,440 minutes became
+2,880.** The other eleven tables were untouched, so nothing looked systematic.
+
+The pipeline reported **success**, because the retries succeeded.
+
+Nothing caught it for two more layers. It surfaced in gold as:
+
+```
+point-in-time lookup on card_holder_guid fanned out:
+2,000 fact rows became 4,000. The dimension has overlapping validity windows.
+```
+
+on a **type-1** dimension, which has no validity windows at all. The assertion
+found the right problem and named the wrong cause, so the obvious next move —
+investigating SCD2 — would have been wasted.
+
+**Changed:** `generate_notebooks.py` writes a full snapshot with dynamic
+partition overwrite on `ingest_date` instead of a blind append, so a re-run
+replaces its own day and leaves earlier dates intact. `bronze-idempotency` in
+`validate.py` fails a `full` table whose layer does not partition by
+`ingest_date`. Proven by re-loading a table twice: 300 live rows in one
+partition where the old code gave 600.
+
+---
+
+## A model can deploy clean and fail every query
+
+`view-columns` checks that a `bi` view names real gold columns. Nothing asked
+the same question of the semantic model, and it is the same defect one layer
+across: a fact carries the **measure target**, so `arrival_event` is computed
+by a business rule and written as `arrival_count`.
+
+The model bound to the rule's name. It deployed, reported `Succeeded`, and then
+failed on every query:
+
+```
+Invalid column name 'arrival_event'.
+Invalid column name 'personnel_arrival'.
+Invalid column name 'visitor_arrival'.
+```
+
+`model-names` passed throughout — it resolves DAX against the model's own
+display names, which is a different question. A model can be perfectly
+self-consistent and bound entirely to columns the warehouse does not have.
+
+**Changed:** `model-columns` in `validate.py`, sharing
+`gold_columns_by_table()` with `view-columns` so the two cannot drift. The
+mutation case catches it on all three existing projects, which means all three
+were equally exposed.
+
+---
+
+## Adding a cleansing rule takes four places, not two
+
+The F4 prompt listed: write the function, register it, sync the contract,
+rebuild the wheel. Two more are needed and neither fails loudly.
+
+**`tools/dryrun.py` keeps its own implementation of every rule.** That second
+reading of the spec is the point of the dry run — but a rule it does not
+implement is **skipped, not failed**. Five rules were added, `DRY RUN PASSED`
+was printed, and the first one then failed in Spark. The run had never
+exercised any of them.
+
+**The generated silver notebook asserts the strict row identity.** A rule that
+legitimately multiplies rows cannot satisfy
+`count(in) == count(kept) + count(rejected)`. Exploding six personas into
+twenty-one persona-building rows failed a correct build, and reported the gain
+as a loss:
+
+```
+AssertionError: row loss: 6 in, 21 out, 0 quarantined, -15 unaccounted
+```
+
+A negative shortfall was the only hint the message described the opposite of
+what happened.
+
+**Changed:** `dryrun-parity` in `validate.py`; `ROW_MULTIPLYING_RULES` in both
+`tools/dryrun.py` and `generators/generate_notebooks.py`, which switches the
+notebook to a one-way "may add, must never lose" check; the F4 prompt now lists
+all six steps.
+
+---
+
+## The diagnostic tool was broken in three ways at once
+
+`diagnose_notebook.py` exists because Fabric reports one sentence for every
+failure. When it was finally needed it produced, in order:
+
+1. `IndexError: list index out of range` — in the code that WARNS about
+   unresolved placeholders. `text.split("@@")[1:2]` yields segments that no
+   longer contain `@@`, and it then indexed `[1]` into them.
+2. After that was fixed: every `@@environment:...@@` left unresolved, because
+   it looked for an `"environment"` key inside the map returned by
+   `get_storage_ids`, which only ever holds lakehouse and warehouse ids.
+3. After that: `no traceback written (HTTP 404) -- usually a capacity
+   eviction`. The traceback goes to `/lakehouse/default`, and
+   `--scratch-lakehouse` defaults to `lh_silver`, so **diagnosing any bronze
+   notebook silently found nothing** — while blaming capacity.
+
+Only then did it give the answer, which took one line:
+`'overwriteSchema' cannot be used in dynamic partition overwrite mode`.
+
+**Changed:** all three fixed; the read-back now searches every provisioned
+lakehouse and says which one it found the file in.
+
+---
+
+## Smaller things that cost time
+
+- **`DISTINCTCOUNT` over a dimension counts the unknown member.** `Total
+  Cardholders` read 301 against 300 real cardholders. The Active measures were
+  unaffected — the unknown member's flags default to 0 — so three of four
+  measures were right, which is what made the fourth easy to miss. Exclude the
+  unknown member explicitly in any count over a dimension.
+- **The bronze generator emits a CSV reader and nothing else.** `connection.kind`
+  accepts jdbc, rest and eventhub; `generate_notebooks.py` has one branch and
+  `generate_pipelines.py` has no copy activity. A "Postgres source" project
+  must export to files and land them. Now a `connection-kind` warning.
+- **`project_status.py` read prose as a placeholder.** A finished spec
+  explaining that a rule keeps the original "as `<column>_source`" was reported
+  as `1 to fill: <column>`, so the stage could not be marked done without
+  rewording its own documentation. Placeholders are now only counted when the
+  TEMPLATE carries the same token.
+- **Two commands in the F1 prompt did not exist**: `validate.py --stage`
+  (it takes `--track`) and `provision_items.py` (it is `provision_storage.py`).
+- **The `pii` enum has no category for a pseudonymous identifier.** A GUID that
+  resolves to a person only inside the source system can be declared fully PII,
+  forcing masking that breaks the RLS join it is needed for, or not PII at all.
+  Neither is true. Left as-is and documented in the column description; a
+  `pseudonymous_id` value would be the honest fix.
+
+---
+
 ## Tooling added while learning this
 
 | Tool | Use |

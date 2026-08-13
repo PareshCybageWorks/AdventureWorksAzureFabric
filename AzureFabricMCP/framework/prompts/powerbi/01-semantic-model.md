@@ -68,10 +68,10 @@ measures is harder to use than one with 12 that were requested.
 ## Then
 
 ```bash
-python framework/generators/validate.py      --project <p> --track powerbi
-python framework/generators/generate_tmdl.py --specs   <p> --out <p>/generated/model
-python framework/deploy/push_semantic_model.py --project <p> --env dev
-python framework/tools/query_model.py        --project <p> --smoke
+python AzureFabricMCP/framework/generators/validate.py      --project <p> --track powerbi
+python AzureFabricMCP/framework/generators/generate_tmdl.py --specs   <p> --out <p>/generated/model
+python AzureFabricMCP/framework/deploy/push_semantic_model.py --project <p> --env dev
+python AzureFabricMCP/framework/tools/query_model.py        --project <p> --smoke
 ```
 
 `query_model.py --smoke` evaluates every measure. **Run it.** A model that

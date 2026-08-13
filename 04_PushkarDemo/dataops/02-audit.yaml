@@ -1,0 +1,171 @@
+version: 1
+
+# =============================================================================
+# D2 Data Audit -- 04_PushkarDemo
+# =============================================================================
+# D1 asks "is this table healthy". D2 asks "where did the rows go" -- the
+# question nobody can answer at 5pm when a total looks low.
+#
+# ON MEASURES, and why this project is unusual. The framework's instruction is
+# to declare a measure wherever one exists, and specifically to name the MONEY
+# column at every layer because it changes name on the way through. This
+# dataset has NO money column anywhere -- not in any of the sixteen source
+# tables. The value being tracked is people arriving at buildings.
+#
+# So where a measure is declared below it is `used_presence_this_day`, an
+# additive flag that survives every layer under one name. It is the only
+# column that behaves like a value: summable, meaningful, and capable of
+# moving without the row count moving. Row count carries most of the weight
+# here, which is normally a warning sign and in this case is simply the shape
+# of the data. Stated rather than left to be inferred from an absent field.
+#
+# Contract: ../../AzureFabricMCP/framework/contracts/dataops/02-audit.schema.json
+# =============================================================================
+
+metadata:
+  name: pushkar-demo
+
+target:
+  # The WAREHOUSE, not a lakehouse. The semantic model reads DirectLake from
+  # there, so an audit written elsewhere cannot be reported beside the numbers
+  # it audits.
+  table: dbo.audit_layer_flow
+  view: bi.vw_layer_audit
+  # append keeps history, so a slow leak shows as a trend rather than only as
+  # today's number. One row per entity per layer per run.
+  write_mode: append
+
+entities:
+  # ---------------------------------------------------------------------
+  # The fact. This is the flow that matters: 2,000 badge reads have to reach
+  # gold intact, and every executive number is built on them.
+  - name: arrivals
+    description: >-
+      Badge reads, bronze through gold. Nothing in the pipeline is designed to
+      discard an arrival -- there is no inner join on the way to the fact and
+      no rejecting rule that fires on clean data -- so any gap here is a defect
+      rather than an expected loss. That makes this the most informative row in
+      the audit: it should be flat, and a flat series is easy to read a break
+      in.
+    layers:
+      bronze:
+        table: bronze_kastle_pg_arrivals
+        measure: used_presence_this_day
+      silver:
+        table: stg_arrivals
+        measure: used_presence_this_day
+        quarantine: stg_arrivals_quarantine
+      gold:
+        table: dbo.fct_arrivals
+        measure: used_presence_this_day
+
+  # ---------------------------------------------------------------------
+  - name: card_holder
+    description: >-
+      People. Watched because the fact joins to it on the GUID: a cardholder
+      lost between layers takes every one of that person's arrivals to the
+      unknown member, where they are still counted but attributed to nobody.
+    layers:
+      bronze:
+        table: bronze_kastle_pg_card_holder
+      silver:
+        table: stg_card_holder
+        quarantine: stg_card_holder_quarantine
+      gold:
+        table: dbo.dim_card_holder
+
+  # ---------------------------------------------------------------------
+  # grain_changes is REQUIRED here, and not for the usual SCD2 reason.
+  # extend_calendar deliberately ADDS rows in silver -- 104 source days become
+  # whole calendar years -- so silver legitimately and hugely exceeds bronze.
+  # Without the flag the audit reports the fix for CAL-001 as a fault, every
+  # single run, and a check that cries wolf gets muted within a week.
+  - name: calendar_date
+    grain_changes: true
+    description: >-
+      The calendar. Silver holds far more rows than bronze on purpose: the
+      source covers 104 days and Power BI time intelligence needs whole years.
+      Audited anyway, because a calendar that stops GROWING is how CAL-001
+      comes back.
+    layers:
+      bronze:
+        table: bronze_kastle_pg_calendar_date
+      silver:
+        table: stg_calendar_date
+        quarantine: stg_calendar_date_quarantine
+      gold:
+        table: dbo.dim_date
+
+  # ---------------------------------------------------------------------
+  # Also grain_changes, for the second row-multiplying rule in the project:
+  # explode_json_array turns 6 personas into one row per persona per building.
+  # This is the one table where the silver layer identity
+  # count(bronze) == count(silver) + count(quarantine) does not hold, and
+  # SILVER-RECON-004 reconciles it on distinct username instead.
+  - name: user_security_scope
+    grain_changes: true
+    description: >-
+      Persona-to-building scope, the source of row-level security. Six persona
+      rows expand to one row per building each. Audited because RLS failures
+      are invisible by nature -- an under-scoped viewer sees fewer rows, not an
+      error, so a silent loss here shows up as an executive quietly seeing less
+      than they should.
+    layers:
+      bronze:
+        table: bronze_kastle_pg_user_security
+      silver:
+        table: stg_user_security_scope
+        quarantine: stg_user_security_scope_quarantine
+      gold:
+        table: dbo.dim_user_scope
+
+  # ---------------------------------------------------------------------
+  - name: institution
+    description: >-
+      Companies. The only entity in the project with a rejecting referential
+      rule on the way to silver -- building_key is checked against
+      stg_building -- so this is where a quarantine count would first appear.
+    layers:
+      bronze:
+        table: bronze_kastle_pg_institution
+      silver:
+        table: stg_institution
+        quarantine: stg_institution_quarantine
+      gold:
+        table: dbo.dim_institution
+
+  # ---------------------------------------------------------------------
+  - name: building
+    description: >-
+      Five rows, and every arrival joins to one. Small enough that a loss of
+      even one row moves a fifth of the reporting surface, which is exactly why
+      a tiny table is worth auditing rather than assumed safe.
+    layers:
+      bronze:
+        table: bronze_kastle_pg_building
+      silver:
+        table: stg_building
+        quarantine: stg_building_quarantine
+      gold:
+        table: dbo.dim_building
+
+# -----------------------------------------------------------------------------
+# Reporting this in Power BI. Three traps, all of which produce plausible
+# numbers rather than errors:
+#
+#   1. the table APPENDS, so measures must scope to the newest run -- otherwise
+#      every figure silently accumulates across every run ever made
+#   2. a CARD has no axis, so [Rows] and [Retention %] sum every layer together
+#      -- retention read 2.7% that way
+#   3. retention must compare LIKE FOR LIKE, only entities that reach gold --
+#      dividing by all of bronze read 71% when the answer was 95%
+#
+# For THIS project add a fourth: two entities carry grain_changes: true and
+# legitimately gain rows, so any retention measure that does not exclude them
+# will report well over 100% for the calendar and read as a bug in the audit
+# rather than as the calendar fix working.
+#
+# Relate the audit table to NOTHING. It describes the pipeline, not the
+# business, and a relationship to Date would filter the audit by the very
+# calendar it is auditing.
+# -----------------------------------------------------------------------------

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Kastle Insights",
+    "description": "Reproduction of the Kastle Insights report -- arrivals, activity, company breakdown and mobile credential usage."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "65b836f7-7c8e-5e99-a8b4-97fbea6dc212"
+  }
+}

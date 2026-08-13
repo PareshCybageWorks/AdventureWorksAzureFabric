@@ -1,0 +1,478 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_building",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_building@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_calendar_date",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_calendar_date@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_time_of_day",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_time_of_day@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_institution",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_institution@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_reader_detail",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_reader_detail@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_arrivals",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_calendar_date",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_card_holder",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_card_holder@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_calendar_date",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_time_of_day",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_reader_detail",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_arrivals",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_arrivals@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_permission_shared",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_permission_shared@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_permission_building",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_permission_building@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_reader_detail",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_delegated_public_reader",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_delegated_public_reader@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_reader_detail",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_owned_reader",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_owned_reader@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_reader_inst_mapping",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_reader_inst_mapping@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_enterprise",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_enterprise@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_bridge_ent_inst",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_bridge_ent_inst@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_clean_stg_user_security",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_user_security@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_user_security",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_clean_stg_user_security_scope",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_clean_stg_user_security_scope@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_clean_stg_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_calendar_date",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_time_of_day",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_institution",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_reader_detail",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_card_holder",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_arrivals",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_permission_shared",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_permission_building",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_delegated_public_reader",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_owned_reader",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_reader_inst_mapping",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_enterprise",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_bridge_ent_inst",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_user_security",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_clean_stg_user_security_scope",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_cascade_quarantine",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_cascade_quarantine@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      }
+    ]
+  }
+}

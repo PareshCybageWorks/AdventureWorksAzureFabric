@@ -53,10 +53,10 @@ here — the model already knows, and restating it is a second place to be wrong
 ## Then
 
 ```bash
-python framework/generators/validate.py        --project <p> --track powerbi
-python framework/generators/generate_report.py --specs   <p> --out <p>/generated/reports
-python framework/deploy/push_semantic_model.py --project <p> --env dev   # P1 first
-python framework/deploy/push_reports.py        --project <p> --env dev
+python AzureFabricMCP/framework/generators/validate.py        --project <p> --track powerbi
+python AzureFabricMCP/framework/generators/generate_report.py --specs   <p> --out <p>/generated/reports
+python AzureFabricMCP/framework/deploy/push_semantic_model.py --project <p> --env dev   # P1 first
+python AzureFabricMCP/framework/deploy/push_reports.py        --project <p> --env dev
 ```
 
 **Deploy the model before the report.** `push_reports.py` refuses otherwise: a

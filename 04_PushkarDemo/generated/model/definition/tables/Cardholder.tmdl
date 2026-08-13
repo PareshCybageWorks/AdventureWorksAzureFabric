@@ -1,0 +1,84 @@
+/// People holding an access card, identified by a Kastle GUID.
+table Cardholder
+	lineageTag: bc2351b4-2386-5e85-bd38-e914f0e88cd0
+
+	/// 36-char Kastle GUID. Pseudonymous - it resolves to a named person only inside the Kastle source system
+	column 'Cardholder ID'
+		dataType: string
+		sourceColumn: card_holder_guid
+		summarizeBy: none
+		lineageTag: 9521e141-75de-509a-b813-f50e642449b6
+
+	column 'Active Last 30 Days'
+		dataType: int64
+		sourceColumn: is_active_in_last_30_days
+		summarizeBy: none
+		lineageTag: 03ae442f-704a-5864-97cb-df933a1a74da
+
+	column 'Active Last 60 Days'
+		dataType: int64
+		sourceColumn: is_active_in_last_60_days
+		summarizeBy: none
+		lineageTag: 831883c6-20a7-57c8-9fc0-0b253db161d8
+
+	column 'Active Last 90 Days'
+		dataType: int64
+		sourceColumn: is_active_in_last_90_days
+		summarizeBy: none
+		lineageTag: 041468eb-e914-57a7-946d-820d810825d2
+
+	/// Recomputed from arrivals; the source value was constant
+	column 'Active Last 365 Days'
+		dataType: int64
+		sourceColumn: is_active_in_last_365_days
+		summarizeBy: none
+		lineageTag: 6c3164c5-58ca-55f9-a140-d059f92034e1
+
+	column card_holder_sk
+		dataType: int64
+		isHidden
+		sourceColumn: card_holder_sk
+		summarizeBy: none
+		lineageTag: fa957291-608e-5b7c-85a6-7c2b2b2cc682
+
+	/// Cardholders on record, excluding the unknown member.
+	measure 'Total Cardholders' = CALCULATE(DISTINCTCOUNT(Cardholder[Cardholder ID]), Cardholder[Cardholder ID] <> "unknown")
+		formatString: #,0
+		displayFolder: Cardholder Activity
+		lineageTag: a9efd2e4-bb3c-550b-8648-7744c3e87749
+
+	/// Cardholders with an arrival in the trailing 30 days. 210 of 300.
+	measure 'Active Cardholders 30d' = CALCULATE(DISTINCTCOUNT(Cardholder[Cardholder ID]), Cardholder[Active Last 30 Days] = 1)
+		formatString: #,0
+		displayFolder: Cardholder Activity
+		lineageTag: fd67ff36-253c-5be8-9cb6-3a18b9c13288
+
+	/// Cardholders with an arrival in the trailing 90 days. 277 of 300.
+	measure 'Active Cardholders 90d' = CALCULATE(DISTINCTCOUNT(Cardholder[Cardholder ID]), Cardholder[Active Last 90 Days] = 1)
+		formatString: #,0
+		displayFolder: Cardholder Activity
+		lineageTag: e05ac9d0-2abe-50d3-8976-be4165d81a62
+
+	measure 'Active Cardholder Rate 30d' = DIVIDE([Active Cardholders 30d], [Total Cardholders])
+		formatString: 0.0%
+		displayFolder: Cardholder Activity
+		lineageTag: eac895cc-2ed0-5a03-8360-da4b1bba7fb0
+
+	/// Cardholders with an arrival in the trailing 60 days.
+	measure 'Active Cardholders 60d' = CALCULATE(DISTINCTCOUNT(Cardholder[Cardholder ID]), Cardholder[Active Last 60 Days] = 1)
+		formatString: #,0
+		displayFolder: Cardholder Activity
+		lineageTag: 444c6002-bd42-5471-9053-1861172143ec
+
+	/// Cardholders with an arrival in the trailing 365 days. Trustworthy only because silver recomputes this flag -- the source value was 1 for all 300 cardholders, which would have made this equal Total Cardholders forever.
+	measure 'Active Cardholders Last Year' = CALCULATE(DISTINCTCOUNT(Cardholder[Cardholder ID]), Cardholder[Active Last 365 Days] = 1)
+		formatString: #,0
+		displayFolder: Cardholder Activity
+		lineageTag: 48e9291a-0dbc-5a76-9c18-aeca6769bd43
+
+	partition Cardholder = entity
+		mode: directLake
+		source
+			entityName: dim_card_holder
+			schemaName: dbo
+			expressionSource: DatabaseQuery

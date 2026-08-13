@@ -1,0 +1,410 @@
+# =============================================================================
+# fabric/05-gold.yaml -- Stage F5
+# =============================================================================
+# The star schema and the reporting views -- what Power BI connects to, and the
+# only layer a business user should see.
+#
+# `dbo` holds physical tables written by the gold notebooks. `bi` holds views
+# shaped for reporting; no pipeline reads from `bi`, so a report can be
+# reshaped by altering a view instead of migrating a table.
+#
+# Procedure: ../../AzureFabricMCP/framework/prompts/fabric/05-gold.md
+# Contract : ../../AzureFabricMCP/framework/contracts/fabric/05-gold.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: gold
+  domain: workplace_access
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  target_item: warehouse
+  physical_schema: dbo
+  reporting_schema: bi
+  # OVERWRITE ONLY. The Fabric Data Warehouse Spark connector fails `append`
+  # with "Write orchestration failed" and no root cause, so even a one-row
+  # insert is read, union, overwrite.
+  write_mode: overwrite
+  format: delta
+
+# =============================================================================
+# Dimensions -- every one SCD1, by decision
+# =============================================================================
+# Asked as a business question -- "if a company moves building, should last
+# year's dashboard still show it in the old one?" -- and answered: no history
+# anywhere. Defensible over 104 days of data in which nothing has yet changed.
+#
+# The consequence, recorded because it is not reversible: type1 keeps no record
+# of what it overwrote, so history cannot be added later by switching `scd`.
+# The day someone wants "occupancy by the building a tenant was in at the time",
+# the dimension has to be rebuilt from a source that still holds the past --
+# and bronze, being immutable and dated, is the only thing that will.
+#
+# Every dimension carries an unknown member. Without it an unmatched fact
+# resolves to a surrogate key that does not exist and the row disappears from
+# any report joining the dimension, with nothing logged. `defaults` must cover
+# EVERY non-nullable column: a warehouse infers NOT NULL from the first write
+# and rejects a member carrying nulls in columns the spec did not name.
+dimensions:
+  - name: dim_building
+    schema: dbo
+    source: silver.stg_building
+    description: The five Manhattan office buildings arrivals are recorded against.
+    scd: type1
+    surrogate_key: building_sk
+    business_key: [building_key]
+    columns:
+      - { source: building_key,  target: building_key,  type: integer, key: business }
+      - { source: building_name, target: building_name, type: string }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        building_key: -1
+        building_name: Unknown
+
+  - name: dim_card_holder
+    schema: dbo
+    source: silver.stg_card_holder
+    description: >-
+      People who hold an access card, keyed on the Kastle GUID. The activity
+      flags here are recomputed by silver from arrivals, not carried from the
+      source -- the source's 365-day flag is 1 for everyone.
+    # type1 deliberately, and this is the one dimension where type2 would be
+    # actively wrong: its only attributes are the four activity flags, which
+    # are recomputed on EVERY run. Under type2 that opens a new version per
+    # cardholder per run -- 300 rows becomes thousands in a month, and every
+    # version records our own recomputation rather than a real-world change.
+    scd: type1
+    surrogate_key: card_holder_sk
+    business_key: [card_holder_guid]
+    columns:
+      - { source: card_holder_guid, target: card_holder_guid, type: string, key: business, description: "36-char Kastle GUID. Pseudonymous - unmasked so the RLS join survives" }
+      - { source: card_holder_key,  target: card_holder_key,  type: integer }
+      - { source: is_active_in_last_30_days,  target: is_active_in_last_30_days,  type: integer }
+      - { source: is_active_in_last_60_days,  target: is_active_in_last_60_days,  type: integer }
+      - { source: is_active_in_last_90_days,  target: is_active_in_last_90_days,  type: integer }
+      - { source: is_active_in_last_365_days, target: is_active_in_last_365_days, type: integer }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        card_holder_guid: unknown
+        card_holder_key: -1
+        is_active_in_last_30_days: 0
+        is_active_in_last_60_days: 0
+        is_active_in_last_90_days: 0
+        is_active_in_last_365_days: 0
+
+  - name: dim_date
+    schema: dbo
+    # silver.stg_calendar_date, NOT `generated`. A generated calendar cannot
+    # know is_work_day or day_is_holiday, and those are the denominator of any
+    # per-working-day measure -- the framework's own reference project flags
+    # exactly this as provisional because it had to generate instead.
+    #
+    # The width problem a generated calendar would have solved is already
+    # solved upstream: extend_calendar widens stg_calendar_date to whole
+    # calendar years in silver. A calendar narrower than the facts is not a
+    # narrow calendar, it is a broken lookup -- every fact outside the window
+    # resolves to the unknown member and reports as a dimension failure rather
+    # than as a date range.
+    source: silver.stg_calendar_date
+    description: >-
+      Calendar, widened to whole calendar years so Power BI time intelligence
+      has a contiguous full-year table to work against. Days generated as
+      padding carry _is_generated = true and null attributes -- they exist so
+      DATEADD and SAMEPERIODLASTYEAR resolve, not to be counted.
+    scd: type1
+    surrogate_key: date_sk
+    business_key: [date_key]
+    columns:
+      - { source: date_key,       target: date_key,       type: integer, key: business }
+      # Named full_date, not calendar_date. The Power BI validator marks a
+      # kind: date table on a source column called `full_date` or `date`, and
+      # anything else fails the check -- time intelligence against an unmarked
+      # date table returns WRONG answers rather than failing.
+      - { source: calendar_date,  target: full_date,      type: date }
+      - { source: is_work_day,    target: is_work_day,    type: integer, description: "Null on generated padding days -- never guessed, because a fabricated working day lands in a denominator" }
+      - { source: day_is_holiday, target: day_is_holiday, type: integer }
+      - { source: day_name,       target: day_name,       type: string }
+      - { source: date_range,     target: date_range,     type: string, description: "Recomputed against current_date in silver, not the frozen source label" }
+    # SPARK SQL, not T-SQL -- business_rules are emitted as F.expr() into a
+    # PySpark notebook, so a DATEPART() here parses as an unknown function and
+    # fails at run time rather than at validation.
+    #
+    # The source calendar carries none of these, and without them the model has
+    # no Calendar hierarchy and no month axis -- a date column alone gives a
+    # report author 400 individual days and no way to roll them up.
+    business_rules:
+      - { name: year_number,   target: year_number,   type: integer, expression: "year(full_date)" }
+      - { name: quarter_number, target: quarter_number, type: integer, expression: "quarter(full_date)" }
+      - { name: month_number,  target: month_number,  type: integer, expression: "month(full_date)" }
+      - { name: month_name,    target: month_name,    type: string,  expression: "date_format(full_date, 'MMMM')" }
+      # Sortable label. Without a numeric companion, a month name sorts
+      # alphabetically -- April, August, December -- and the model reports no
+      # error while doing it.
+      - { name: year_month,    target: year_month,    type: integer, expression: "year(full_date) * 100 + month(full_date)" }
+      - { name: day_of_week,   target: day_of_week,   type: integer, expression: "dayofweek(full_date)" }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        date_key: -1
+        calendar_date: "1900-01-01"
+        is_work_day: 0
+        day_is_holiday: 0
+        day_name: Unknown
+        date_range: Unknown
+
+  - name: dim_time
+    schema: dbo
+    source: silver.stg_time_of_day
+    description: >-
+      Minute of day, 0-1439, carrying the hour it falls in. Gives the arrival
+      pattern an axis finer than a date without putting a timestamp on the fact.
+    scd: type1
+    surrogate_key: time_sk
+    business_key: [time_key]
+    columns:
+      - { source: time_key,    target: time_key,    type: integer, key: business }
+      - { source: hour_of_day, target: hour_of_day, type: integer }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        time_key: -1
+        hour_of_day: -1
+
+  - name: dim_institution
+    schema: dbo
+    source: silver.stg_institution
+    description: >-
+      Companies occupying space in the buildings. 30 rows. This is the
+      dimension where type1 costs the most: a tenant relocating silently
+      re-attributes all of their past arrivals to the new building.
+    scd: type1
+    surrogate_key: institution_sk
+    business_key: [institution_id]
+    columns:
+      - { source: institution_id,   target: institution_id,   type: integer, key: business }
+      - { source: institution_name, target: institution_name, type: string }
+      - { source: building_key,     target: building_key,     type: integer }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        institution_id: -1
+        institution_name: Unknown
+        building_key: -1
+
+  - name: dim_user_scope
+    schema: dbo
+    source: silver.stg_user_security_scope
+    description: >-
+      One row per persona per building that persona may see. This is what
+      row-level security filters dim_building through -- without it in gold,
+      the permission cluster stops at silver and RLS has nothing to bind to.
+
+      Read the caveat before trusting it: the six personas are application
+      logins (enterprise_admin, property_manager, authorizer), not email
+      addresses. USERPRINCIPALNAME() therefore matches NOBODY until a
+      real-user-to-persona mapping exists. The structure is correct and the
+      filter path is real; the identity join is the piece a production
+      deployment still has to supply. An RLS role that matches nobody denies
+      everything, which at least fails visibly rather than leaking.
+    scd: type1
+    surrogate_key: user_scope_sk
+    business_key: [username, building_key]
+    columns:
+      - { source: username,     target: username,     type: string,  key: business }
+      - { source: persona,      target: persona,      type: string }
+      - { source: building_key, target: building_key, type: integer, key: business, description: "Null where a persona's scope array was empty -- the row is kept so an unscoped persona stays visible" }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        username: unknown
+        persona: unknown
+        building_key: -1
+
+  - name: dim_reader
+    schema: dbo
+    source: silver.stg_reader_detail
+    description: >-
+      Card readers, and whether each is public or scoped. is_scoped_reader
+      decides which readers a given viewer is permitted to count.
+    scd: type1
+    surrogate_key: reader_sk
+    business_key: [reader_key]
+    columns:
+      - { source: reader_key,       target: reader_key,       type: integer, key: business }
+      - { source: is_scoped_reader, target: is_scoped_reader, type: integer }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults:
+        reader_key: -1
+        is_scoped_reader: 0
+
+# =============================================================================
+# Facts
+# =============================================================================
+facts:
+  - name: fct_arrivals
+    schema: dbo
+    description: >-
+      Badge reads at building entrances. Serves every occupancy, headcount and
+      arrival-pattern measure on the executive dashboards.
+    # Declared in words and length-checked, because a fact whose grain nobody
+    # wrote down is a fact somebody will double-count. This one was MEASURED:
+    # 2,000 rows are unique on the four columns below, but only 1,911 distinct
+    # without time_key.
+    grain: >-
+      One badge read. One row per cardholder, per building, per calendar date,
+      per minute of day. NOT one row per person per day -- 83 of the 2,000 rows
+      are a second entry by the same person to the same building on the same
+      day, and they are real events, not duplicates. Any headcount must
+      therefore be a DISTINCT COUNT of cardholders; counting rows over-reports
+      occupancy by roughly 4%.
+    source: silver.stg_arrivals
+    degenerate_dimensions:
+      - { source: arrival_id,      target: arrival_id,      type: integer, description: "Row identity; uniqueness asserted below" }
+      - { source: user_type,       target: user_type,       type: integer, description: "1 Personnel, 2 Visitor" }
+      - { source: user_type_label, target: user_type_label, type: string }
+      - { source: hour_of_day,     target: hour_of_day,     type: integer, description: "Denormalised from dim_time; zero disagreements measured" }
+      - { source: company_name,    target: company_name,    type: string,  description: "Denormalised institution name the source carries on the fact" }
+    # FOUR names are involved and they do not collapse here. `lookup_on` is the
+    # fact's own column, the dimension's business key may differ, its surrogate
+    # key differs again, and `target` is what lands on the fact. dim_date is
+    # the case that separates them: the fact joins on date_key, the dimension's
+    # business key is date_key, its surrogate is date_sk, and the fact's column
+    # is arrival_date_sk.
+    dimension_keys:
+      - { dimension: dim_card_holder, target: card_holder_sk,  lookup_on: card_holder_guid }
+      - { dimension: dim_building,    target: building_sk,     lookup_on: building_key }
+      - { dimension: dim_date,        target: arrival_date_sk, lookup_on: date_key }
+      - { dimension: dim_time,        target: arrival_time_sk, lookup_on: time_key }
+      - { dimension: dim_reader,      target: reader_sk,       lookup_on: reader_key }
+    business_rules:
+      # One row is one arrival. Materialised as a column so the measure below
+      # is a plain SUM -- a COUNT(*) measure cannot be filtered the same way
+      # once the fact is unioned or partially filtered in a view.
+      - { name: arrival_flag,   target: arrival_event,     type: integer, expression: "1" }
+      - { name: personnel_flag, target: personnel_arrival, type: integer, expression: "CASE WHEN user_type = 1 THEN 1 ELSE 0 END" }
+      - { name: visitor_flag,   target: visitor_arrival,   type: integer, expression: "CASE WHEN user_type = 2 THEN 1 ELSE 0 END" }
+    measures:
+      - { source: arrival_event,          target: arrival_count,        type: integer, aggregation: sum, additive: true,  description: "Badge reads. NOT a headcount - see the grain" }
+      - { source: personnel_arrival,      target: personnel_arrivals,   type: integer, aggregation: sum, additive: true,  description: "1,696 of 2,000" }
+      - { source: visitor_arrival,        target: visitor_arrivals,     type: integer, aggregation: sum, additive: true,  description: "304 of 2,000" }
+      - { source: used_presence_this_day, target: presence_used_count,  type: integer, aggregation: sum, additive: true,  description: "154 of 2,000" }
+      - { source: is_enrolled_today,      target: enrolled_today_count, type: integer, aggregation: sum, additive: true,  description: "296 of 2,000" }
+      # Distinct cardholder count is deliberately NOT a measure here. It is not
+      # additive across ANY dimension -- the distinct people in two buildings
+      # is not the sum of each -- so it cannot be precomputed into a column
+      # without being wrong at every level above the one it was computed at.
+      # It belongs in the semantic model as DISTINCTCOUNT, and P1 declares it.
+    tests:
+      - id: GOLD-GRAIN-001
+        description: >-
+          The declared grain holds -- one row per cardholder, building, date and
+          minute. This is the test that keeps a distinct-count headcount honest.
+        assertion: "unique(card_holder_sk, building_sk, arrival_date_sk, arrival_time_sk)"
+        on_failure: fail
+      - id: GOLD-KEYS-001
+        description: >-
+          Dimension keys resolve. A failed lookup yields the unknown member so
+          the row survives, which means a fact with EVERY key unresolved passes
+          a not-null check -- -1 is not null. This is what catches it.
+        assertion: "assert_keys_resolve(fct_arrivals, threshold=0.01)"
+        on_failure: fail
+      - id: GOLD-RECON-001
+        description: >-
+          Personnel plus visitors equals all arrivals. F5's guidance is to
+          reconcile on MONEY -- this dataset has no money column anywhere, so
+          the additive measure is arrivals, and this is the check that stands
+          in for it. A gap means user_type quarantining removed rows one side
+          still counts.
+        assertion: "sum(arrival_count) == sum(personnel_arrivals) + sum(visitor_arrivals)"
+        on_failure: fail
+      - id: GOLD-RECON-002
+        description: >-
+          Gold ties back to ALL of silver, which is what makes a loss visible.
+          Every silver arrival reaches the fact -- there is no join here that
+          can discard one, and this asserts that stays true.
+        assertion: "count(fct_arrivals) == count(silver.stg_arrivals)"
+        on_failure: fail
+      - id: GOLD-DISTINCT-001
+        description: >-
+          Distinct cardholders never exceeds arrivals, and is strictly less
+          here because of the 83 re-entries. If these ever became equal, either
+          the re-entries were silently deduplicated or the grain changed.
+        assertion: "count_distinct(card_holder_sk) < count(fct_arrivals)"
+        on_failure: warn
+
+# =============================================================================
+# Reporting views -- T-SQL, in the `bi` schema
+# =============================================================================
+# These are what the semantic model binds to, so the star schema can be
+# reshaped without migrating a table. No pipeline reads from `bi`.
+#
+# T-SQL, not Spark SQL: these are created in the warehouse. A PySpark function
+# here parses as an unknown identifier at deploy time, not at validation.
+views:
+  - name: vw_daily_occupancy
+    schema: bi
+    description: >-
+      Arrivals and distinct people per building per day -- the headline
+      occupancy series on the executive dashboard. The distinct count is done
+      here, in SQL, precisely because it cannot be precomputed as an additive
+      measure on the fact.
+    grain: One row per building per calendar date.
+    sql: >-
+      SELECT d.full_date, d.day_name, d.is_work_day, b.building_name,
+             COUNT_BIG(*) AS arrival_count,
+             COUNT(DISTINCT f.card_holder_sk) AS distinct_people,
+             SUM(f.personnel_arrivals) AS personnel_arrivals,
+             SUM(f.visitor_arrivals) AS visitor_arrivals
+      FROM dbo.fct_arrivals f
+      JOIN dbo.dim_date d ON d.date_sk = f.arrival_date_sk
+      JOIN dbo.dim_building b ON b.building_sk = f.building_sk
+      GROUP BY d.full_date, d.day_name, d.is_work_day, b.building_name
+
+  - name: vw_hourly_arrival_pattern
+    schema: bi
+    description: >-
+      Arrivals by hour of day and building, for the peak-arrival view. Uses the
+      hour from dim_time rather than the denormalised copy on the fact, so the
+      dimension stays the single definition.
+    grain: One row per building per hour of day.
+    sql: >-
+      SELECT b.building_name, t.hour_of_day,
+             COUNT_BIG(*) AS arrival_count,
+             COUNT(DISTINCT f.card_holder_sk) AS distinct_people
+      FROM dbo.fct_arrivals f
+      JOIN dbo.dim_time t ON t.time_sk = f.arrival_time_sk
+      JOIN dbo.dim_building b ON b.building_sk = f.building_sk
+      GROUP BY b.building_name, t.hour_of_day
+
+  - name: vw_company_presence
+    schema: bi
+    description: >-
+      Arrivals and distinct people per company per month -- who is actually
+      using the space they occupy. Reads company_name from the fact rather than
+      joining dim_institution, because the fact carries the company the
+      cardholder belonged to AT THE TIME, and the type1 dimension no longer
+      does.
+    grain: One row per company per month.
+    sql: >-
+      SELECT f.company_name,
+             DATEFROMPARTS(YEAR(d.full_date), MONTH(d.full_date), 1) AS month_start,
+             COUNT_BIG(*) AS arrival_count,
+             COUNT(DISTINCT f.card_holder_sk) AS distinct_people
+      FROM dbo.fct_arrivals f
+      JOIN dbo.dim_date d ON d.date_sk = f.arrival_date_sk
+      WHERE f.company_name IS NOT NULL
+      GROUP BY f.company_name, DATEFROMPARTS(YEAR(d.full_date), MONTH(d.full_date), 1)

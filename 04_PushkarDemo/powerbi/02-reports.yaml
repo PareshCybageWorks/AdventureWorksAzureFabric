@@ -1,0 +1,637 @@
+version: 1
+
+# =============================================================================
+# P2 Reports -- 04_PushkarDemo
+# =============================================================================
+# Every field is "Table.Field" using the DISPLAY names from 01-semantic-model.
+# validate.py resolves them: a renamed measure fails the build here rather than
+# silently emptying a visual. That is the failure this stage exists to prevent
+# -- a renamed measure does not break its visuals, it empties them, and nothing
+# logs it.
+#
+# Everything numeric here is a MEASURE, never a column. The model hides the raw
+# fact columns precisely so a report cannot invent its own aggregate.
+#
+# Contract: ../../AzureFabricMCP/framework/contracts/powerbi/02-reports.schema.json
+# =============================================================================
+
+defaults:
+  page_width: 1280
+  page_height: 720
+
+reports:
+  - name: rpt_workplace_access_executive
+    display_name: Workplace Access Executive
+    model: sm_workplace_access
+    audience: >-
+      CxO. Supports the decision of whether the office footprint matches actual
+      use: how full the five buildings are, when people actually come in, which
+      tenants under-use the space they lease, and how many badges are live.
+      Four pages, one question set each -- three questions is the practical
+      limit for one screen, and a fourth becomes a page.
+    description: Occupancy, arrival pattern, company presence and badge activity across five Manhattan buildings.
+
+    pages:
+      # ===================================================================
+      - name: occupancy
+        display_name: Occupancy
+        description: >-
+          How full are the buildings? Reading order is headline numbers across
+          the top, the daily trend below-left, the building breakdown to its
+          right, and the per-building detail underneath.
+
+          Every headcount here is Distinct People, not Total Arrivals. The two
+          differ by about 4% because 83 of 2,000 badge reads are somebody
+          re-entering the same building the same day.
+        visuals:
+          - type: card
+            title: Distinct People
+            position: { x: 20, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Arrivals.Distinct People]
+          - type: card
+            title: Total Arrivals
+            position: { x: 335, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Arrivals.Total Arrivals]
+          - type: card
+            title: Peak Daily People
+            position: { x: 650, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Arrivals.Peak Daily People]
+          - type: card
+            title: Avg Daily People
+            position: { x: 965, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Arrivals.Avg Daily People]
+
+          # Daily, not monthly. The data spans 104 days, so a month axis would
+          # give four points and hide the weekly rhythm entirely.
+          - type: lineChart
+            title: Distinct people per day
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Date.Date]
+              Y: [Arrivals.Distinct People]
+
+          - type: clusteredBarChart
+            title: Distinct people by building
+            position: { x: 790, y: 160, width: 470, height: 300 }
+            fields:
+              Category: [Building.Building]
+              Y: [Arrivals.Distinct People]
+            # Sorted by the measure, descending. The default is alphabetical,
+            # which would order these by street name and bury the finding.
+            sort:
+              field: Arrivals.Distinct People
+              direction: Descending
+
+          - type: tableEx
+            title: Building detail
+            position: { x: 20, y: 480, width: 1000, height: 220 }
+            fields:
+              Values:
+                - Building.Building
+                - Arrivals.Distinct People
+                - Arrivals.Total Arrivals
+                - Arrivals.Arrivals per Person
+            sort:
+              field: Arrivals.Distinct People
+              direction: Descending
+
+          # One slicer, not five. Each is a decision the reader has to make
+          # before seeing anything at all.
+          - type: slicer
+            title: Month
+            position: { x: 1040, y: 480, width: 220, height: 220 }
+            fields:
+              Values: [Date.Month]
+
+      # ===================================================================
+      - name: arrival_pattern
+        display_name: Arrival Pattern
+        description: >-
+          When do people come in? The hour-of-day profile shows the morning
+          peak; the weekday profile shows which days the office is actually
+          used. Work-day figures exclude weekends and holidays using the
+          calendar's own flag rather than a weekday assumption.
+        visuals:
+          - type: card
+            title: Work Day Arrivals
+            position: { x: 20, y: 20, width: 400, height: 120 }
+            fields:
+              Values: [Arrivals.Work Day Arrivals]
+          - type: card
+            title: Avg Arrivals per Work Day
+            position: { x: 440, y: 20, width: 400, height: 120 }
+            fields:
+              Values: [Arrivals.Avg Arrivals per Work Day]
+          - type: card
+            title: Personnel Share %
+            position: { x: 860, y: 20, width: 400, height: 120 }
+            fields:
+              Values: [Arrivals.Personnel Share %]
+
+          # Hour comes from the Time of Day dimension, not the denormalised
+          # copy on the fact, so the dimension stays the single definition.
+          - type: columnChart
+            title: Arrivals by hour of day
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Time of Day.Hour]
+              Y: [Arrivals.Total Arrivals]
+
+          - type: clusteredBarChart
+            title: Arrivals by day of week
+            position: { x: 790, y: 160, width: 470, height: 300 }
+            fields:
+              Category: [Date.Day of Week]
+              Y: [Arrivals.Total Arrivals]
+            sort:
+              field: Arrivals.Total Arrivals
+              direction: Descending
+
+          - type: tableEx
+            title: Personnel and visitors by hour
+            position: { x: 20, y: 480, width: 1000, height: 220 }
+            fields:
+              Values:
+                - Time of Day.Hour
+                - Arrivals.Personnel Arrivals
+                - Arrivals.Visitor Arrivals
+                - Arrivals.Distinct People
+
+          - type: slicer
+            title: Building
+            position: { x: 1040, y: 480, width: 220, height: 220 }
+            fields:
+              Values: [Building.Building]
+
+      # ===================================================================
+      - name: company_presence
+        display_name: Company Presence
+        description: >-
+          Which tenants actually use the space they lease? Distinct people per
+          company is the number that matters commercially -- a company with a
+          large footprint and few distinct badges is under-using it.
+
+          Company is read from the arrival itself, so it reflects the company
+          the cardholder belonged to AT THE TIME. The Company dimension is
+          type1 and no longer holds the past.
+        visuals:
+          - type: card
+            title: Companies Present
+            position: { x: 20, y: 20, width: 400, height: 120 }
+            fields:
+              Values: [Arrivals.Companies Present]
+          - type: card
+            title: People per Company
+            position: { x: 440, y: 20, width: 400, height: 120 }
+            fields:
+              Values: [Arrivals.People per Company]
+          - type: card
+            title: Distinct People
+            position: { x: 860, y: 20, width: 400, height: 120 }
+            fields:
+              Values: [Arrivals.Distinct People]
+
+          - type: clusteredBarChart
+            title: Distinct people by company
+            position: { x: 20, y: 160, width: 1240, height: 300 }
+            fields:
+              Category: [Arrivals.Company]
+              Y: [Arrivals.Distinct People]
+            sort:
+              field: Arrivals.Distinct People
+              direction: Descending
+
+          - type: tableEx
+            title: Company detail
+            position: { x: 20, y: 480, width: 1000, height: 220 }
+            fields:
+              Values:
+                - Arrivals.Company
+                - Arrivals.Distinct People
+                - Arrivals.Total Arrivals
+                - Arrivals.Arrivals per Person
+            sort:
+              field: Arrivals.Total Arrivals
+              direction: Descending
+
+          - type: slicer
+            title: Building
+            position: { x: 1040, y: 480, width: 220, height: 220 }
+            fields:
+              Values: [Building.Building]
+
+      # ===================================================================
+      - name: cardholder_activity
+        display_name: Cardholder Activity
+        description: >-
+          How many badges are live? Counts cardholders whether or not they
+          appear in the filtered arrivals -- an inactive badge is precisely one
+          with no arrivals, so these measures sit on the Cardholder table
+          rather than on the fact.
+
+          The 365-day figure is trustworthy here only because silver recomputes
+          it. The source value was 1 for all 300 cardholders, which would have
+          shown a flat 100% active forever while the 30/60/90 windows behaved.
+        visuals:
+          - type: card
+            title: Total Cardholders
+            position: { x: 20, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Cardholder.Total Cardholders]
+          - type: card
+            title: Active 30 Days
+            position: { x: 335, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Cardholder.Active Cardholders 30d]
+          - type: card
+            title: Active 90 Days
+            position: { x: 650, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Cardholder.Active Cardholders 90d]
+          - type: card
+            title: Active Rate 30 Days
+            position: { x: 965, y: 20, width: 295, height: 120 }
+            fields:
+              Values: [Cardholder.Active Cardholder Rate 30d]
+
+          - type: clusteredBarChart
+            title: Distinct people by building
+            position: { x: 20, y: 160, width: 610, height: 300 }
+            fields:
+              Category: [Building.Building]
+              Y: [Arrivals.Distinct People]
+            sort:
+              field: Arrivals.Distinct People
+              direction: Descending
+
+          - type: lineChart
+            title: Distinct people per day
+            position: { x: 650, y: 160, width: 610, height: 300 }
+            fields:
+              Category: [Date.Date]
+              Y: [Arrivals.Distinct People]
+
+          - type: tableEx
+            title: Active cardholders by window
+            position: { x: 20, y: 480, width: 1000, height: 220 }
+            fields:
+              Values:
+                - Cardholder.Total Cardholders
+                - Cardholder.Active Cardholders 30d
+                - Cardholder.Active Cardholders 90d
+                - Cardholder.Active Cardholder Rate 30d
+
+          - type: slicer
+            title: Active Period
+            position: { x: 1040, y: 480, width: 220, height: 220 }
+            fields:
+              Values: [Date.Active Period]
+
+  # =======================================================================
+  # Second report: a reproduction of the real Kastle Insights report
+  # =======================================================================
+  # Built from four screenshots in powerbi/report_images/. Layout, visual
+  # types, card order and sort direction follow the originals; the numbers
+  # will not, because this runs on a 300-cardholder / 2,000-arrival sample
+  # where the real report shows 37,708 personnel. Every visual renders, just
+  # smaller -- nothing here is faked to match a screenshot.
+  #
+  # Bound to the SAME model as rpt_workplace_access_executive. Two reports over
+  # one model is the point: a second model would be a second definition of
+  # Distinct People, and the two would drift.
+  #
+  # The originals carry a right-hand Filter panel on every page (Date Range,
+  # Day of Week, Building, Company, User Type). Reproduced as slicers. P2's
+  # own guidance is that one slicer beats five -- that is right for a report
+  # designed from scratch, and this one is deliberately matching an existing
+  # product its users already know.
+  - name: rpt_kastle_insights
+    display_name: Kastle Insights
+    model: sm_workplace_access
+    audience: >-
+      The same CxO audience, in the layout Kastle's own Insights product uses.
+      Supports the return-to-office conversation with the four questions that
+      product answers: how arrivals trend, how occupancy compares to the
+      population, which companies use their space, and how far mobile
+      credential adoption has got.
+    description: Reproduction of the Kastle Insights report -- arrivals, activity, company breakdown and mobile credential usage.
+
+    pages:
+      # ===================================================================
+      - name: arrival_trends
+        display_name: Arrival Trends
+        description: >-
+          How arrivals trend day to day, by weekday, and by hour. Reading order
+          matches the original: headline counts across the top, the daily
+          series below them, then the two shape charts side by side.
+        visuals:
+          - type: card
+            title: Personnel At Least Once In Last Year
+            position: { x: 20, y: 20, width: 250, height: 100 }
+            fields:
+              Values: [Cardholder.Active Cardholders Last Year]
+          - type: card
+            title: At Least Once In Date Range
+            position: { x: 280, y: 20, width: 250, height: 100 }
+            fields:
+              Values: [Arrivals.Distinct People]
+          - type: card
+            title: Daily Max In Date Range
+            position: { x: 540, y: 20, width: 250, height: 100 }
+            fields:
+              Values: [Arrivals.Peak Daily People]
+          - type: card
+            title: Daily Average In Date Range
+            position: { x: 800, y: 20, width: 250, height: 100 }
+            fields:
+              Values: [Arrivals.Avg Daily People]
+
+          # Stacked by user type, as the original is -- Personnel and Visitors
+          # in one column per day rather than two series side by side.
+          - type: columnChart
+            title: Daily Arrivals
+            position: { x: 20, y: 135, width: 1030, height: 280 }
+            fields:
+              Category: [Date.Date]
+              Y: [Arrivals.Total Arrivals]
+              Series: [Arrivals.User Type]
+
+          # Mon-Fri order comes from sort_by Day of Week Number on the model
+          # column. Without it this sorts alphabetically -- Friday, Monday,
+          # Thursday -- and the model reports no error while doing it.
+          - type: columnChart
+            title: Days Of Week
+            position: { x: 20, y: 430, width: 505, height: 270 }
+            fields:
+              Category: [Date.Day of Week]
+              Y: [Arrivals.Total Arrivals]
+
+          - type: columnChart
+            title: Peak Arrival Times
+            position: { x: 545, y: 430, width: 505, height: 270 }
+            fields:
+              Category: [Time of Day.Hour]
+              Y: [Arrivals.Total Arrivals]
+
+          - type: slicer
+            title: Date Range
+            position: { x: 1070, y: 20, width: 190, height: 120 }
+            fields:
+              Values: [Date.Date]
+          - type: slicer
+            title: Day of Week
+            position: { x: 1070, y: 150, width: 190, height: 110 }
+            fields:
+              Values: [Date.Day of Week]
+          - type: slicer
+            title: Building
+            position: { x: 1070, y: 270, width: 190, height: 110 }
+            fields:
+              Values: [Building.Building]
+          - type: slicer
+            title: Company
+            position: { x: 1070, y: 390, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.Company]
+          - type: slicer
+            title: User Type
+            position: { x: 1070, y: 510, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.User Type]
+
+      # ===================================================================
+      - name: activity_trends
+        display_name: Activity Trends
+        description: >-
+          Occupancy as a share of the population that uses the space, rather
+          than as a raw count.
+
+          Active+ is the daily average of unique people divided by the unique
+          people seen anywhere in the selected range. Max Active+ is the same
+          ratio at the busiest single day. Both come from the original's own
+          definition panel, and both were checked against the numbers printed
+          on it: 7,144/25,316 = 28%, 11,300/25,316 = 45%.
+
+          The original renders those definitions in a text box on the page.
+          P2 has no text visual, so they live here in the page description
+          rather than being dropped.
+        visuals:
+          - type: card
+            title: Active Plus
+            position: { x: 20, y: 20, width: 196, height: 100 }
+            fields:
+              Values: [Arrivals.Active Plus]
+          - type: card
+            title: Max Active Plus
+            position: { x: 226, y: 20, width: 196, height: 100 }
+            fields:
+              Values: [Arrivals.Max Active Plus]
+          - type: card
+            title: Daily Average In Date Range
+            position: { x: 432, y: 20, width: 196, height: 100 }
+            fields:
+              Values: [Arrivals.Avg Daily People]
+          - type: card
+            title: Daily Max In Date Range
+            position: { x: 638, y: 20, width: 196, height: 100 }
+            fields:
+              Values: [Arrivals.Peak Daily People]
+          - type: card
+            title: At Least Once In Date Range
+            position: { x: 844, y: 20, width: 196, height: 100 }
+            fields:
+              Values: [Arrivals.Distinct People]
+
+          - type: columnChart
+            title: Active Plus Daily
+            position: { x: 20, y: 135, width: 1030, height: 300 }
+            fields:
+              Category: [Date.Date]
+              Y: [Arrivals.Distinct People]
+
+          - type: tableEx
+            title: Daily detail
+            position: { x: 20, y: 450, width: 1030, height: 250 }
+            fields:
+              Values:
+                - Date.Date
+                - Arrivals.Distinct People
+                - Arrivals.Total Arrivals
+                - Arrivals.Active Plus
+
+          - type: slicer
+            title: Date Range
+            position: { x: 1070, y: 20, width: 190, height: 120 }
+            fields:
+              Values: [Date.Date]
+          - type: slicer
+            title: Day of Week
+            position: { x: 1070, y: 150, width: 190, height: 110 }
+            fields:
+              Values: [Date.Day of Week]
+          - type: slicer
+            title: Building
+            position: { x: 1070, y: 270, width: 190, height: 110 }
+            fields:
+              Values: [Building.Building]
+          - type: slicer
+            title: Company
+            position: { x: 1070, y: 390, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.Company]
+          - type: slicer
+            title: User Type
+            position: { x: 1070, y: 510, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.User Type]
+
+      # ===================================================================
+      - name: activity_by_company
+        display_name: Activity By Company
+        description: >-
+          Which companies actually use the space they lease, and how the active
+          population decays across trailing windows.
+
+          The 30/60/90/365-day figures come from the Cardholder flags that
+          silver RECOMPUTES from arrivals. The source's own 365-day flag was 1
+          for every cardholder, so on raw data this panel would show the
+          last-year bar equal to the total and the decay would vanish.
+        visuals:
+          - type: card
+            title: Daily Max In Date Range
+            position: { x: 20, y: 20, width: 332, height: 100 }
+            fields:
+              Values: [Arrivals.Peak Daily People]
+          - type: card
+            title: Daily Average In Date Range
+            position: { x: 364, y: 20, width: 332, height: 100 }
+            fields:
+              Values: [Arrivals.Avg Daily People]
+          - type: card
+            title: Avg Days Per Week
+            position: { x: 708, y: 20, width: 332, height: 100 }
+            fields:
+              Values: [Arrivals.Avg Days Per Week]
+
+          # Horizontal bars, sorted by the measure. The original is sorted
+          # descending; alphabetical would bury the finding, which is which
+          # tenant is largest.
+          - type: barChart
+            title: Personnel by Company
+            position: { x: 20, y: 135, width: 505, height: 565 }
+            fields:
+              Category: [Arrivals.Company]
+              Y: [Arrivals.Distinct People]
+            sort:
+              field: Arrivals.Distinct People
+              direction: Descending
+
+          # The original draws five measures as one bar each. That is a chart
+          # over measures rather than over a category, which needs a field
+          # parameter; a multiRowCard carries the same five numbers with their
+          # labels and needs no extra model object.
+          - type: multiRowCard
+            title: Personnel by Time
+            position: { x: 545, y: 135, width: 505, height: 565 }
+            fields:
+              Values:
+                - Cardholder.Active Cardholders Last Year
+                - Cardholder.Active Cardholders 90d
+                - Cardholder.Active Cardholders 60d
+                - Cardholder.Active Cardholders 30d
+                - Arrivals.Distinct People
+
+          - type: slicer
+            title: Date Range
+            position: { x: 1070, y: 20, width: 190, height: 120 }
+            fields:
+              Values: [Date.Date]
+          - type: slicer
+            title: Day of Week
+            position: { x: 1070, y: 150, width: 190, height: 110 }
+            fields:
+              Values: [Date.Day of Week]
+          - type: slicer
+            title: Building
+            position: { x: 1070, y: 270, width: 190, height: 110 }
+            fields:
+              Values: [Building.Building]
+          - type: slicer
+            title: Company
+            position: { x: 1070, y: 390, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.Company]
+          - type: slicer
+            title: User Type
+            position: { x: 1070, y: 510, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.User Type]
+
+      # ===================================================================
+      - name: mobile_credential_usage
+        display_name: Mobile Credential Usage
+        description: >-
+          How far mobile credential adoption has got, overall and by company.
+
+          READ THE ASSUMPTION FIRST. used_presence_this_day is taken to mean
+          the Kastle Presence mobile credential. The ratios agree -- the real
+          report shows 8% (2,064 of 25,316), this sample gives 7.7% (154 of
+          2,000) -- but it was inferred from the product name and has not been
+          confirmed with Kastle. Every number on this page inherits that
+          assumption.
+        visuals:
+          - type: card
+            title: Used Mobile Credential in Date Range
+            position: { x: 20, y: 20, width: 332, height: 100 }
+            fields:
+              Values: [Arrivals.Used Mobile Credential]
+          - type: card
+            title: At Least Once in Date Range
+            position: { x: 364, y: 20, width: 332, height: 100 }
+            fields:
+              Values: [Arrivals.Distinct People]
+          - type: card
+            title: Mobile Credential Usage
+            position: { x: 708, y: 20, width: 332, height: 100 }
+            fields:
+              Values: [Arrivals.Mobile Credential Usage %]
+
+          - type: barChart
+            title: Personnel-Mobile Credential Usage
+            position: { x: 20, y: 135, width: 1030, height: 565 }
+            fields:
+              Category: [Arrivals.Company]
+              Y: [Arrivals.Used Mobile Credential]
+            sort:
+              field: Arrivals.Used Mobile Credential
+              direction: Descending
+
+          - type: slicer
+            title: Date Range
+            position: { x: 1070, y: 20, width: 190, height: 120 }
+            fields:
+              Values: [Date.Date]
+          - type: slicer
+            title: Day of Week
+            position: { x: 1070, y: 150, width: 190, height: 110 }
+            fields:
+              Values: [Date.Day of Week]
+          - type: slicer
+            title: Building
+            position: { x: 1070, y: 270, width: 190, height: 110 }
+            fields:
+              Values: [Building.Building]
+          - type: slicer
+            title: Company
+            position: { x: 1070, y: 390, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.Company]
+          - type: slicer
+            title: User Type
+            position: { x: 1070, y: 510, width: 190, height: 110 }
+            fields:
+              Values: [Arrivals.User Type]

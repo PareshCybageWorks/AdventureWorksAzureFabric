@@ -1,0 +1,31 @@
+/// Card readers, and whether each is public or scoped.
+table Reader
+	lineageTag: 84a83b3b-c7c4-5424-9984-dc0d7a2f58b8
+
+	column 'Reader ID'
+		dataType: int64
+		isHidden
+		sourceColumn: reader_key
+		summarizeBy: none
+		lineageTag: cd0f6ddb-3145-5ea6-83e1-e8a92a69b393
+
+	/// 1 private/scoped, 0 public access
+	column 'Is Scoped Reader'
+		dataType: int64
+		sourceColumn: is_scoped_reader
+		summarizeBy: none
+		lineageTag: 7481300b-9450-5d3f-9088-fc0895985ca6
+
+	column reader_sk
+		dataType: int64
+		isHidden
+		sourceColumn: reader_sk
+		summarizeBy: none
+		lineageTag: 2e3a186a-c127-5930-a5b6-020cd5b3f055
+
+	partition Reader = entity
+		mode: directLake
+		source
+			entityName: dim_reader
+			schemaName: dbo
+			expressionSource: DatabaseQuery

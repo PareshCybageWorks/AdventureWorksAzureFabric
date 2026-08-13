@@ -118,10 +118,30 @@ symptom a later layer would report ("no matching order_id").
 
 1. Write the function in `ttfabric/cleansing.py`, returning `(kept, rejected)`
 2. Register it in `REGISTRY`
-3. `python framework/generators/sync_contract_rules.py`
-4. Rebuild and publish the wheel
+3. `python AzureFabricMCP/framework/generators/sync_contract_rules.py`
+4. **Implement it in `tools/dryrun.py` too**, and register it in that file's
+   own `REGISTRY`
+5. If the rule CHANGES THE ROW COUNT, add it to `ROW_MULTIPLYING_RULES` in
+   both `tools/dryrun.py` and `generators/generate_notebooks.py`
+6. Rebuild and publish the wheel
 
 Skipping step 3 makes `validate.py` fail with an enum-drift error, by design.
+
+**Steps 4 and 5 are the ones that get missed, and neither fails loudly.**
+
+The dry run keeps its OWN implementation of every rule -- that second reading
+of the spec is what makes it worth running. But a rule it does not implement is
+**skipped, not failed**: the run prints `DRY RUN PASSED`, lists the rule under
+"NOT SIMULATED", and never exercises it. Five rules were added, the dry run
+passed, and the first one then failed in Spark.
+
+Step 5 matters because the generated silver notebook asserts
+`count(in) == count(kept) + count(rejected)`. A rule that legitimately
+multiplies rows -- exploding a JSON array into one row per element -- cannot
+satisfy that, and the notebook fails a CORRECT build while reporting the gain
+as a loss: `row loss: 6 in, 21 out, 0 quarantined, -15 unaccounted`.
+
+`dryrun-parity` in `validate.py` now catches step 4.
 
 ## Exit gate
 

@@ -87,7 +87,7 @@ Do not ask about these. Derive them and state what you chose:
 | `naming.tables.silver` | `stg_{entity}`. Silver holds cleansed **staging**, not a dimensional model. |
 | `naming.tables.gold_*` | `dim_{entity}` / `fct_{entity}`. |
 | `naming.verbs` | `load` / `clean` / `build`. The layer is already carried by the storage item and the folder; repeating it yields `nb_bronze_bronze_commerce_orders`. |
-| `workspace_folders` | `0_config` … `5_datastore`, each layer folder splitting into `notebook/` and `pipeline/`. Numeric prefixes force medallion order in an alphabetical UI. |
+| `workspace_folders` | `0_config` … `6_powerbi`, each layer folder splitting into `notebook/` and `pipeline/`. Numeric prefixes force medallion order in an alphabetical UI. Take the template's list as-is: it declares the four items that match no layer pattern — `nb_dq_monitor`, `nb_cascade_quarantine`, the semantic model and the report. Drop any of them and `organise_items` leaves it at the workspace root while reporting `0 unmatched`. `folder-coverage` fails the build first. |
 
 ## Step 3 — Write the spec
 
@@ -108,7 +108,7 @@ inheriting it and discovering that later.
 ## Step 4 — Validate
 
 ```bash
-python framework/generators/validate.py --project <project> --stage fabric/01-scaffolding
+python AzureFabricMCP/framework/generators/validate.py --project <project> --track fabric
 ```
 
 Authoritative: a non-conforming spec **fails**. Do not proceed to provisioning
@@ -117,9 +117,9 @@ with validation errors outstanding.
 ## Step 5 — Provision
 
 ```bash
-python framework/deploy/create_workspaces.py --project <project> --capacity <id>
-python framework/deploy/provision_items.py  --project <project> --env dev
-python framework/deploy/organise_items.py   --project <project> --env dev
+python AzureFabricMCP/framework/deploy/create_workspaces.py --project <project> --capacity <id>
+python AzureFabricMCP/framework/deploy/provision_storage.py --project <project> --env dev
+python AzureFabricMCP/framework/deploy/organise_items.py   --project <project> --env dev
 ```
 
 Record the resulting ids back into `environments[].provisioned_items`, so the
@@ -134,8 +134,8 @@ Mirrors deployed items into the repo as text, so "what changed between Tuesday
 and Friday" is a commit range instead of somebody's memory.
 
 ```bash
-python framework/deploy/connect_git.py --project <project> --env dev --status
-python framework/deploy/connect_git.py --project <project> --env dev
+python AzureFabricMCP/framework/deploy/connect_git.py --project <project> --env dev --status
+python AzureFabricMCP/framework/deploy/connect_git.py --project <project> --env dev
 ```
 
 **It is a mirror, not a deployment path.** Items reach a workspace one way:

@@ -31,7 +31,7 @@ import hashlib
 import json
 import sys
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -346,6 +346,174 @@ def rule_add_record_hash(rows, ctx, exclude=None, **_):
     return rows, [], 0
 
 
+# ---------------------------------------------------------------------------
+# Structural rules
+# ---------------------------------------------------------------------------
+# These mirror the structural rules in ttfabric/cleansing.py. They exist here
+# because the simulator keeps its OWN implementation of every rule -- adding a
+# rule to the library REGISTRY and re-syncing the contract is not enough, and a
+# rule missing here is skipped rather than failed, which makes the row counts
+# an upper bound rather than an answer.
+
+def rule_assert_grain(rows, ctx, columns=None, allow_duplicates=False, **_):
+    """Assert the grain WITHOUT deduplicating it.
+
+    The whole point of the rule: a repeated combination is sometimes a
+    duplicate and sometimes a real repeated event. With allow_duplicates the
+    repeats are counted and kept, never removed.
+    """
+    groups: dict[tuple, list[Row]] = defaultdict(list)
+    for row in rows:
+        groups[tuple(row.get(c) for c in columns or [])].append(row)
+    over = {key: group for key, group in groups.items() if len(group) > 1}
+
+    if allow_duplicates:
+        # Rejects nothing. The excess is recorded on the rows so a later check
+        # can see it, exactly as the Spark version puts it in run stats.
+        excess = sum(len(g) - 1 for g in over.values())
+        for group in over.values():
+            for row in group:
+                row["_over_grain"] = True
+        ctx.setdefault("stats", {})[f"grain_excess"] = excess
+        return rows, [], 0
+
+    kept, rejected = [], []
+    for key, group in groups.items():
+        if len(group) > 1:
+            rejected.extend(group)
+        else:
+            kept.extend(group)
+    return kept, _reject(rejected, "assert_grain",
+                         f"more than one row per {columns}"), 0
+
+
+def rule_explode_json_array(rows, ctx, column=None, into=None,
+                            element_type="string", drop_source=False, **_):
+    """Expand a JSON array in a text column into one row per element.
+
+    Raises the row count on purpose. A null or empty array yields ONE row with
+    a null element rather than zero, so a persona with no scope stays visible
+    instead of silently vanishing -- which is the failure mode that makes an
+    RLS bug invisible.
+    """
+    out = []
+    for row in rows:
+        raw = row.get(column)
+        try:
+            elements = json.loads(raw) if isinstance(raw, str) and raw.strip() else []
+        except (ValueError, TypeError):
+            elements = []
+        if not isinstance(elements, list) or not elements:
+            elements = [None]
+        for element in elements:
+            new = dict(row)
+            if element is not None and element_type in ("integer", "long"):
+                try:
+                    element = int(element)
+                except (ValueError, TypeError):
+                    element = None
+            new[into] = element
+            if drop_source:
+                new.pop(column, None)
+            out.append(new)
+    return out, [], 0
+
+
+def rule_extend_calendar(rows, ctx, date_column=None, key_column=None,
+                         to_full_years=True, start=None, end=None, **_):
+    """Extend a date dimension to whole calendar years.
+
+    Generated rows carry _is_generated = true and null attributes. Nothing is
+    guessed: a fabricated is_work_day would land in a working-day denominator.
+    """
+    dates = [r.get(date_column) for r in rows if r.get(date_column)]
+    if not dates:
+        return rows, [], 0
+    lo_year = min(str(d)[:4] for d in dates)
+    hi_year = max(str(d)[:4] for d in dates)
+    lo = date.fromisoformat(start) if start else date(int(lo_year), 1, 1)
+    hi = date.fromisoformat(end) if end else (
+        date(int(hi_year), 12, 31) if to_full_years else date.fromisoformat(str(max(dates)))
+    )
+
+    existing = {str(r.get(date_column)) for r in rows}
+    for row in rows:
+        row["_is_generated"] = False
+
+    template = {k: None for k in rows[0]}
+    generated, cursor = [], lo
+    while cursor <= hi:
+        iso = cursor.isoformat()
+        if iso not in existing:
+            new = dict(template)
+            new[date_column] = iso
+            new[key_column] = int(cursor.strftime("%Y%m%d"))
+            new["_is_generated"] = True
+            generated.append(new)
+        cursor += timedelta(days=1)
+
+    ctx.setdefault("stats", {})["calendar_generated"] = len(generated)
+    return rows + generated, [], 0
+
+
+def rule_recompute_activity_flags(rows, ctx, key=None, event_table=None,
+                                  event_key=None, event_date_column=None,
+                                  windows=None, as_of=None, **_):
+    """Recompute "active in the last N days" from the event table.
+
+    The source computes these once, at extract time, and they are wrong every
+    day after. The original is kept beside each recomputed value so a
+    disagreement stays visible rather than being overwritten.
+    """
+    events = ctx["tables"].get((event_table or "").split(".")[-1], [])
+    if not events:
+        # The event table has not been built yet in this run. Silence beats
+        # zeroing every flag, which would report the correction as destroying
+        # the column it exists to fix.
+        return rows, [], 0
+
+    dates = [e.get(event_date_column) for e in events if e.get(event_date_column)]
+    if not dates:
+        return rows, [], 0
+    anchor = date.fromisoformat(str(as_of)) if as_of else date.fromisoformat(str(max(dates)))
+
+    corrected = 0
+    for column, days in (windows or {}).items():
+        cutoff = anchor - timedelta(days=int(days))
+        active = {
+            e.get(event_key) for e in events
+            if e.get(event_date_column) and date.fromisoformat(str(e[event_date_column])) > cutoff
+        }
+        for row in rows:
+            original = row.get(column)
+            row[f"{column}_source"] = original
+            row[column] = 1 if row.get(key) in active else 0
+            corrected += int(original is not None and original != row[column])
+    return rows, [], corrected
+
+
+def rule_flag_incomplete_reference(rows, ctx, required_columns=None,
+                                   flag="_reference_incomplete", **_):
+    """Mark a reference table that cannot do the job its name claims.
+
+    Rejects nothing: every row is individually fine, and the rows are the only
+    thing the table does have.
+    """
+    present = set(rows[0]) if rows else set()
+    missing = [c for c in (required_columns or []) if c not in present]
+    for row in rows:
+        row[flag] = bool(missing)
+    ctx.setdefault("stats", {})["incomplete_reference"] = missing
+    return rows, [], 0
+
+
+# Rules that legitimately CHANGE THE ROW COUNT upward. The silver layer
+# identity does not hold across these, and that is by design rather than a
+# defect -- a persona scoped to five buildings genuinely is five facts.
+# Reconcile those tables on distinct parent key instead of on row count.
+ROW_MULTIPLYING_RULES = {"explode_json_array", "extend_calendar"}
+
+
 REGISTRY = {
     "cast_types": rule_cast_types,
     "apply_transforms": rule_apply_transforms,
@@ -362,6 +530,12 @@ REGISTRY = {
     "recompute_total_from_lines": rule_recompute_total_from_lines,
     "recompute_items_count": rule_recompute_items_count,
     "mask_pii": rule_mask_pii,
+    # Structural rules -- shape rather than values.
+    "assert_grain": rule_assert_grain,
+    "explode_json_array": rule_explode_json_array,
+    "extend_calendar": rule_extend_calendar,
+    "recompute_activity_flags": rule_recompute_activity_flags,
+    "flag_incomplete_reference": rule_flag_incomplete_reference,
     "add_record_hash": rule_add_record_hash,
 }
 
@@ -508,9 +682,25 @@ def run(project: Path, verbose: bool) -> int:
         tables[f"{target}_quarantine"] = quarantine
 
         # Reconciliation: SILVER-RECON-003
+        #
+        # Some rules MULTIPLY rows on purpose: explode_json_array turns one
+        # persona into one row per building it may see, and extend_calendar
+        # pads a partial calendar out to whole years. For those the identity
+        # count(in) == count(kept) + count(rejected) cannot hold, and it is not
+        # supposed to -- D2's `grain_changes: true` records the same fact for
+        # the layer audit.
+        #
+        # Reporting them as ROW LOSS was worse than unhelpful: the label named
+        # the opposite of what happened, and a run that says the pipeline is
+        # losing rows when it is adding them is one nobody trusts twice.
+        multiplying = ROW_MULTIPLYING_RULES & {r["fn"] for r in table.get("rules", [])}
         accounted = len(rows) + len(quarantine)
-        status = "OK" if accounted == rows_in else "ROW LOSS"
-        if accounted != rows_in:
+        if accounted == rows_in:
+            status = "OK"
+        elif multiplying and accounted > rows_in:
+            status = "ROW GAIN"      # expected; reconcile on distinct parent key
+        else:
+            status = "ROW LOSS"
             failures += 1
 
         print(f"  {target:<24} {rows_in:>8,} in -> {len(rows):>8,} kept  "
@@ -539,8 +729,14 @@ def run(project: Path, verbose: bool) -> int:
     if mismatched:
         failures += 1
 
-    unaccounted = sum(1 for t, i, k, q, _ in summary if i != k + q)
+    # Only a genuine LOSS counts. A table that gained rows through a
+    # row-multiplying rule is reported separately rather than as a fault.
+    unaccounted = sum(1 for t, i, k, q, _ in summary if k + q < i)
+    gained = sum(1 for t, i, k, q, _ in summary if k + q > i)
     print(f"  SILVER-RECON-003  tables losing rows: {unaccounted:,}")
+    if gained:
+        print(f"                    tables gaining rows by design: {gained:,} "
+              f"(reconcile on distinct parent key -- see D2 grain_changes)")
 
     # ---- data quality thresholds ----------------------------------------
     print()

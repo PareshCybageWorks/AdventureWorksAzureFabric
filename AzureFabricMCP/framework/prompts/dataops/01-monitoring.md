@@ -125,11 +125,11 @@ would sit there looking like coverage while measuring nothing.
 ## Then
 
 ```bash
-python framework/tests/test_monitoring.py                    # verdict logic, no Spark
-python framework/generators/validate.py --project <p> --track dataops
-python framework/generators/generate_monitoring.py --specs <p> --out <p>/generated/notebooks
-python framework/deploy/push_library.py --project <p> --env dev --wait   # if rules changed
-python framework/deploy/push_items.py   --project <p> --env dev --create-missing
+python AzureFabricMCP/framework/tests/test_monitoring.py                    # verdict logic, no Spark
+python AzureFabricMCP/framework/generators/validate.py --project <p> --track dataops
+python AzureFabricMCP/framework/generators/generate_monitoring.py --specs <p> --out <p>/generated/notebooks
+python AzureFabricMCP/framework/deploy/push_library.py --project <p> --env dev --wait   # if rules changed
+python AzureFabricMCP/framework/deploy/push_items.py   --project <p> --env dev --create-missing
 ```
 
 `push_library.py` is needed whenever `ttfabric/monitoring.py` changes — the

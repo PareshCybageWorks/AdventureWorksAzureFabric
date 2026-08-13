@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -54,7 +55,7 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy"))
-from _project import get_storage_ids, get_workspace_id      # noqa: E402
+from _project import get_environment, get_storage_ids, get_workspace_id  # noqa: E402
 
 API = "https://api.fabric.microsoft.com/v1"
 ONELAKE = "https://onelake.dfs.fabric.microsoft.com"
@@ -132,17 +133,32 @@ def main() -> int:
     for name, item in (provisioned or {}).items():
         replacements[f"@@lakehouse:{name}@@"] = item
         replacements[f"@@warehouse:{name}@@"] = item
-    for name, item in ((provisioned or {}).get("environment") or {}).items() \
-            if isinstance((provisioned or {}).get("environment"), dict) else []:
+    # Environment ids come from the spec, NOT from `provisioned`.
+    #
+    # get_storage_ids returns the storage map alone -- {lh_bronze: id, ...} --
+    # so the old lookup asked a storage map for a key named "environment",
+    # always got nothing, and left every `@@environment:env_spark@@` in place.
+    # The diagnostic notebook then deployed with a literal placeholder as its
+    # environment binding and died before running anything, which is exactly
+    # the failure this tool exists to explain.
+    env_items = ((get_environment(project, args.env).get("provisioned_items") or {})
+                 .get("environment") or {})
+    for name, item in env_items.items():
         replacements[f"@@environment:{name}@@"] = item
+
     for placeholder, value in replacements.items():
         if isinstance(value, str):
             text = text.replace(placeholder, value)
 
     if "@@" in text:
-        leftover = {t.split("@@")[1] for t in text.split("@@")[1:2]}
-        print(f"  WARNING  unresolved placeholder(s) remain: {leftover}. The "
-              f"diagnostic may have no lakehouse and fail before running.")
+        # Report every distinct placeholder, not a crash. The old expression
+        # took text.split("@@")[1:2] -- segments that no longer contain "@@" --
+        # and then indexed [1] into them, so the WARNING path raised
+        # IndexError and took the whole tool down with it.
+        leftover = set(re.findall(r"@@([^@]+)@@", text))
+        print(f"  WARNING  unresolved placeholder(s) remain: {sorted(leftover)}. "
+              f"The diagnostic may have no lakehouse or environment and fail "
+              f"before running anything.")
 
     response = requests.post(
         f"{API}/workspaces/{workspace}/items/{item_id}/updateDefinition",
@@ -186,7 +202,7 @@ def main() -> int:
         print("capacity eviction, or an unresolved lakehouse placeholder.")
     print("=" * 70)
     print(f"\nRESTORE the real notebook:\n"
-          f"  python framework/deploy/push_items.py "
+          f"  python AzureFabricMCP/framework/deploy/push_items.py "
           f"--project {args.project} --env {args.env}")
     return 0
 
