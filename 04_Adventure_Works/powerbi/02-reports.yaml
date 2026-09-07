@@ -1,0 +1,251 @@
+version: 1
+
+# =============================================================================
+# P2 Reports -- Adventure Works Sales
+# =============================================================================
+
+defaults:
+  page_width: 1280
+  page_height: 720
+
+reports:
+  - name: rpt_sales_summary
+    display_name: Sales Summary
+    model: sm_sales
+    audience: >-
+      Sales leadership and regional managers. Supports tracking overall sales
+      performance, identifying trends by territory and salesperson, and
+      comparing channel performance (B2C vs B2B).
+    description: Executive-level sales overview with trends, territories, and channels.
+
+    pages:
+      - name: summary
+        display_name: Sales Overview
+        description: >-
+          Top-level KPIs and trends. Shows total revenue, orders, and profit
+          across all time, with monthly trend line and regional breakdown.
+
+        visuals:
+          # --- KPI cards (top-left) ---
+          - type: card
+            title: Total Revenue
+            position: { x: 20, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Revenue]
+
+          - type: card
+            title: Total Orders
+            position: { x: 280, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Orders]
+
+          - type: card
+            title: Gross Profit
+            position: { x: 540, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Gross Profit]
+
+          - type: card
+            title: Gross Margin %
+            position: { x: 800, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Gross Margin %]
+
+          # --- revenue trend ---
+          - type: lineChart
+            title: Monthly Revenue Trend
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Date.Date]
+              Y: [Sales.Total Revenue]
+
+          # --- territory breakdown ---
+          - type: clusteredBarChart
+            title: Revenue by Territory
+            position: { x: 785, y: 160, width: 475, height: 300 }
+            fields:
+              Category: [Territory.Territory Name]
+              Y: [Sales.Total Revenue]
+            sort:
+              field: Sales.Total Revenue
+              direction: Descending
+
+          # --- detail by salesperson ---
+          - type: tableEx
+            title: Sales by Salesperson
+            position: { x: 20, y: 475, width: 1000, height: 225 }
+            fields:
+              Values:
+                - Salesperson.Salesperson Name
+                - Territory.Territory Name
+                - Sales.Total Orders
+                - Sales.Total Revenue
+                - Sales.Gross Profit
+
+          # --- year slicer ---
+          - type: slicer
+            title: Filter by Year
+            position: { x: 1040, y: 475, width: 220, height: 225 }
+            fields:
+              Values: [Date.Year]
+
+  - name: rpt_product_performance
+    display_name: Product Performance
+    model: sm_sales
+    audience: >-
+      Sales and product leadership. Identifies top-performing and low-performing
+      products by revenue and margin, supports inventory and pricing decisions.
+    description: Product-level analysis with profitability and category breakdown.
+
+    pages:
+      - name: products
+        display_name: Product Analysis
+        description: >-
+          Product profitability dashboard. Shows revenue and margin trends,
+          top products by revenue, and detailed metrics by category.
+
+        visuals:
+          # --- KPI cards ---
+          - type: card
+            title: Total Product SKUs
+            position: { x: 20, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Quantity]
+
+          - type: card
+            title: Product Revenue
+            position: { x: 280, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Revenue]
+
+          - type: card
+            title: Profit Margin
+            position: { x: 540, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Gross Margin %]
+
+          - type: card
+            title: Total Cost
+            position: { x: 800, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Cost]
+
+          # --- margin trend ---
+          - type: lineChart
+            title: Gross Margin Trend by Month
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Date.Date]
+              Y: [Sales.Gross Margin %]
+
+          # --- top products by revenue ---
+          - type: clusteredBarChart
+            title: Top 15 Products by Revenue
+            position: { x: 785, y: 160, width: 475, height: 300 }
+            fields:
+              Category: [Product.Product Name]
+              Y: [Sales.Total Revenue]
+            sort:
+              field: Sales.Total Revenue
+              direction: Descending
+
+          # --- category detail ---
+          - type: tableEx
+            title: Revenue and Margin by Category
+            position: { x: 20, y: 475, width: 1000, height: 225 }
+            fields:
+              Values:
+                - Product.Category
+                - Product.Subcategory
+                - Sales.Total Revenue
+                - Sales.Total Cost
+                - Sales.Gross Profit
+                - Sales.Gross Margin %
+
+          # --- category slicer ---
+          - type: slicer
+            title: Filter by Category
+            position: { x: 1040, y: 475, width: 220, height: 225 }
+            fields:
+              Values: [Product.Category]
+
+  - name: rpt_channel_comparison
+    display_name: Channel Comparison
+    model: sm_sales
+    audience: >-
+      Sales leadership and channel managers. Compares B2C (Internet direct) and
+      B2B (Reseller) channel performance, identifies growth opportunities.
+    description: B2C vs B2B channel and reseller analysis.
+
+    pages:
+      - name: channels
+        display_name: Channel Performance
+        description: >-
+          Channel comparison dashboard. Shows revenue split between Internet
+          (B2C) and Reseller (B2B) channels, top resellers by channel, and
+          territory performance by channel type.
+
+        visuals:
+          # --- KPI cards ---
+          - type: card
+            title: Total Revenue
+            position: { x: 20, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Revenue]
+
+          - type: card
+            title: Total Orders
+            position: { x: 280, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Total Orders]
+
+          - type: card
+            title: Avg Order Value
+            position: { x: 540, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Avg Unit Price]
+
+          - type: card
+            title: Channel Margin
+            position: { x: 800, y: 20, width: 240, height: 120 }
+            fields:
+              Values: [Sales.Gross Margin %]
+
+          # --- revenue trend ---
+          - type: lineChart
+            title: Monthly Revenue Trend
+            position: { x: 20, y: 160, width: 750, height: 300 }
+            fields:
+              Category: [Date.Date]
+              Y: [Sales.Total Revenue]
+
+          # --- top resellers by revenue ---
+          - type: clusteredBarChart
+            title: Top 20 Resellers by Revenue
+            position: { x: 785, y: 160, width: 475, height: 300 }
+            fields:
+              Category: [Reseller.Reseller Name]
+              Y: [Sales.Total Revenue]
+            sort:
+              field: Sales.Total Revenue
+              direction: Descending
+
+          # --- channel and territory detail ---
+          - type: tableEx
+            title: Channel and Territory Performance
+            position: { x: 20, y: 475, width: 1000, height: 225 }
+            fields:
+              Values:
+                - Reseller.Channel
+                - Territory.Territory Name
+                - Sales.Total Orders
+                - Sales.Total Revenue
+                - Sales.Total Quantity
+                - Sales.Gross Profit
+
+          # --- channel slicer ---
+          - type: slicer
+            title: Filter by Channel
+            position: { x: 1040, y: 475, width: 220, height: 225 }
+            fields:
+              Values: [Reseller.Channel]

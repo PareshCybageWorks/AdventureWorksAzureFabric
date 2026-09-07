@@ -1,0 +1,40 @@
+version: 1
+
+metadata:
+  name: 04_adventure_works
+  calibrated_from: "Adventure Works sample baseline"
+
+results:
+  table: dbo.dq_run_log
+  retain_days: 400
+
+severity_levels:
+  info:
+    blocks_promotion: false
+    alerts: false
+    description: Recorded for trend analysis only
+  warning:
+    blocks_promotion: false
+    alerts: true
+    description: Upstream drifting
+  error:
+    blocks_promotion: true
+    alerts: true
+    description: Data is wrong
+  critical:
+    blocks_promotion: true
+    alerts: true
+    description: Data is unusable
+
+enforcement:
+  dev:
+    mode: warn
+    block_on: []
+  uat:
+    mode: block
+    block_on: [error, critical]
+  prod:
+    mode: alert
+    block_on: [critical]
+
+expectations: []
