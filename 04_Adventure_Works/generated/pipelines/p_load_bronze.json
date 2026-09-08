@@ -1,0 +1,162 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "dependsOn": [],
+        "name": "nb_load_product",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_product@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_load_sales",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_sales@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_load_reseller",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_reseller@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_load_region",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_region@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_load_salesperson",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_salesperson@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [],
+        "name": "nb_load_salesperson_region",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_salesperson_region@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      },
+      {
+        "dependsOn": [
+          {
+            "activity": "nb_load_product",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_load_sales",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_load_reseller",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_load_region",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_load_salesperson",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "nb_load_salesperson_region",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ],
+        "name": "nb_load_targets",
+        "policy": {
+          "retry": 1,
+          "retryIntervalInSeconds": 60,
+          "secureInput": false,
+          "secureOutput": false,
+          "timeout": "0.02:00:00"
+        },
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "@@notebook:nb_load_targets@@",
+          "parameters": {},
+          "workspaceId": "@@workspace@@"
+        }
+      }
+    ]
+  }
+}

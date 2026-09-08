@@ -1,0 +1,53 @@
+/// B2B reseller (distributor) directory with business type and location.
+table Reseller
+	lineageTag: 7b945785-262b-50ff-b629-84c125120a7c
+
+	column 'Reseller ID'
+		dataType: int64
+		sourceColumn: reseller_key
+		summarizeBy: none
+		lineageTag: 09704d2e-0676-59f5-8acd-e8e3a4f324e6
+
+	column 'Reseller Name'
+		dataType: string
+		sourceColumn: reseller_name
+		summarizeBy: none
+		lineageTag: 6908b674-e812-59bb-aa0b-63333580494c
+
+	column Channel
+		dataType: string
+		sourceColumn: business_type
+		summarizeBy: none
+		lineageTag: 93234893-01f8-5be4-9679-ba7c7bf1bbd7
+
+	column City
+		dataType: string
+		sourceColumn: city
+		summarizeBy: none
+		lineageTag: 452ab881-4dfe-5df8-82d3-48d20a2a8e50
+
+	column 'State/Province'
+		dataType: string
+		sourceColumn: state_province
+		summarizeBy: none
+		lineageTag: 6bec7abd-8943-5c2b-a5b3-e4c00c325195
+
+	column 'Country/Region'
+		dataType: string
+		sourceColumn: country_region
+		summarizeBy: none
+		lineageTag: 3df7d990-900b-5e29-9413-d5b8d894bc00
+
+	column reseller_sk
+		dataType: int64
+		isHidden
+		sourceColumn: reseller_sk
+		summarizeBy: none
+		lineageTag: d7f85dc9-1489-5246-bb20-7c466d19991c
+
+	partition Reseller = entity
+		mode: directLake
+		source
+			entityName: dim_reseller
+			schemaName: dbo
+			expressionSource: DatabaseQuery

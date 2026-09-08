@@ -1,0 +1,147 @@
+/// One row per sales order with product, quantity, revenue, and cost.
+table Sales
+	lineageTag: 3fa09399-28f3-533c-8f09-8c715750d9c1
+
+	column 'Order Number'
+		dataType: string
+		sourceColumn: sales_order_number
+		summarizeBy: none
+		lineageTag: 6c0e000e-b468-5ba3-b8de-ece7935d3a56
+
+	column 'Order Date'
+		dataType: dateTime
+		sourceColumn: order_date
+		summarizeBy: none
+		lineageTag: 49ffda3b-64de-571e-ba01-bf5da082453e
+
+	column 'Line Quantity'
+		dataType: string
+		isHidden
+		sourceColumn: order_quantity
+		summarizeBy: none
+		formatString: #,0
+		lineageTag: a5eae739-1ea5-524a-b345-61abb78ac40f
+
+	column 'Line Unit Price'
+		dataType: decimal
+		isHidden
+		sourceColumn: unit_price
+		summarizeBy: none
+		formatString: $#,0.00
+		lineageTag: 8a5690ba-3e89-575f-8f19-0e300e611d04
+
+	column 'Line Revenue'
+		dataType: decimal
+		isHidden
+		sourceColumn: sales_revenue
+		summarizeBy: none
+		formatString: $#,0.00
+		lineageTag: ec84eb5a-41c4-5bbe-a221-fffc755b2ac8
+
+	column 'Line Cost'
+		dataType: decimal
+		isHidden
+		sourceColumn: sales_cost
+		summarizeBy: none
+		formatString: $#,0.00
+		lineageTag: f083ea97-a47d-56d1-bcc0-1a0285269f47
+
+	column 'Line Gross Profit'
+		dataType: decimal
+		isHidden
+		sourceColumn: gross_profit
+		summarizeBy: none
+		formatString: $#,0.00
+		lineageTag: c29e911f-501d-5283-a4e1-6d57cdb98292
+
+	column 'Line Margin %'
+		dataType: decimal
+		isHidden
+		sourceColumn: gross_margin_pct
+		summarizeBy: none
+		formatString: 0.00%
+		lineageTag: 58497959-82ef-5581-9f01-0cb3a1490ef0
+
+	column order_date_sk
+		dataType: string
+		isHidden
+		sourceColumn: order_date_sk
+		summarizeBy: none
+		lineageTag: 8ff0450c-9af2-536e-8d26-52c1dc37ea39
+
+	column product_sk
+		dataType: int64
+		isHidden
+		sourceColumn: product_sk
+		summarizeBy: none
+		lineageTag: c6885fed-9e54-5961-81a2-4de9e67e1a48
+
+	column region_sk
+		dataType: int64
+		isHidden
+		sourceColumn: region_sk
+		summarizeBy: none
+		lineageTag: cbb88708-3d3c-53fe-989c-e2bacd3a8c49
+
+	column reseller_sk
+		dataType: int64
+		isHidden
+		sourceColumn: reseller_sk
+		summarizeBy: none
+		lineageTag: f12e44e5-0766-5998-ba7d-caa6c43ba780
+
+	column salesperson_sk
+		dataType: int64
+		isHidden
+		sourceColumn: salesperson_sk
+		summarizeBy: none
+		lineageTag: 3373bdf6-5fbd-5dc2-b9be-7d6e6e01076c
+
+	/// Count of distinct sales orders.
+	measure 'Total Orders' = DISTINCTCOUNT(Sales[Order Number])
+		formatString: #,0
+		displayFolder: Sales Metrics
+		lineageTag: 93259400-a782-507c-94ba-7faa9b213593
+
+	/// Total units sold across all orders.
+	measure 'Total Quantity' = SUM(Sales[Line Quantity])
+		formatString: #,0
+		displayFolder: Sales Metrics
+		lineageTag: 2f6bbd24-7eee-5d35-a9f0-e280efbcc0d2
+
+	/// Gross sales revenue (unit price × quantity) before cost deduction.
+	measure 'Total Revenue' = SUM(Sales[Line Revenue])
+		formatString: $#,0
+		displayFolder: Sales Metrics
+		lineageTag: 76804f73-f5ec-5451-8256-70a08b9428e0
+
+	/// Cost of goods sold across all orders.
+	measure 'Total Cost' = SUM(Sales[Line Cost])
+		formatString: $#,0
+		displayFolder: Sales Metrics
+		lineageTag: 76562717-2cfe-544b-85d2-dcae0a21096c
+
+	/// Revenue minus cost; measures profitability before operating expenses.
+	measure 'Gross Profit' = SUM(Sales[Line Gross Profit])
+		formatString: $#,0
+		displayFolder: Profitability
+		lineageTag: 55b1d3f6-de25-5500-9c54-b2b5b61d19fc
+
+	/// Gross profit as a percentage of revenue; indicates unit-level efficiency.
+	measure 'Gross Margin %' = DIVIDE(SUM(Sales[Line Gross Profit]), SUM(Sales[Line Revenue]), 0)
+		formatString: 0.00%
+		displayFolder: Profitability
+		lineageTag: e1c32d8a-5845-5325-b66d-5abaca4c60e4
+
+	/// Average selling price per unit; non-additive across hierarchies.
+	measure 'Avg Unit Price' = DIVIDE(SUM(Sales[Line Revenue]), SUM(Sales[Line Quantity]), 0)
+		formatString: $#,0.00
+		displayFolder: Pricing
+		lineageTag: 30f7f459-d523-52b8-b257-63eb26149b7c
+
+	partition Sales = entity
+		mode: directLake
+		source
+			entityName: fct_sales
+			schemaName: dbo
+			expressionSource: DatabaseQuery

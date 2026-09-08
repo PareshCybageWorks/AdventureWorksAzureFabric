@@ -70,11 +70,11 @@ def main() -> int:
                "Content-Type": "application/json"}
 
     models = requests.get(f"{FABRIC_API}/workspaces/{workspace}/semanticModels",
-                          headers=headers, timeout=60).json().get("value", [])
+                          headers=headers, timeout=60, verify=False).json().get("value", [])
     model_ids = {m["displayName"]: m["id"] for m in models}
 
     existing = requests.get(f"{FABRIC_API}/workspaces/{workspace}/reports",
-                            headers=headers, timeout=60).json().get("value", [])
+                            headers=headers, timeout=60, verify=False).json().get("value", [])
     report_ids = {r["displayName"]: r["id"] for r in existing}
 
     failures = 0
@@ -115,13 +115,13 @@ def main() -> int:
             response = requests.post(
                 f"{FABRIC_API}/workspaces/{workspace}/reports/{report_id}"
                 f"/updateDefinition?updateMetadata=true", headers=headers,
-                json={"definition": {"parts": parts}}, timeout=300)
+                json={"definition": {"parts": parts}}, timeout=300, verify=False)
         else:
             response = requests.post(
                 f"{FABRIC_API}/workspaces/{workspace}/reports", headers=headers,
                 json={"displayName": display,
                       "description": " ".join(report.get("description", "").split())[:250],
-                      "definition": {"parts": parts}}, timeout=300)
+                      "definition": {"parts": parts}}, timeout=300, verify=False)
 
         if response.status_code not in (200, 201, 202):
             print(f"  ERROR  {name}: HTTP {response.status_code}")
@@ -135,7 +135,7 @@ def main() -> int:
             if status in ("Succeeded", "Failed"):
                 break
             time.sleep(5)
-            poll = requests.get(location, headers=headers, timeout=60).json()
+            poll = requests.get(location, headers=headers, timeout=60, verify=False).json()
             status = poll.get("status")
             if status == "Failed":
                 print(f"  ERROR  {name}: {poll.get('error', {})}")

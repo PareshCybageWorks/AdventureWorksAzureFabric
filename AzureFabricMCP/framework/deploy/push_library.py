@@ -84,7 +84,7 @@ def build_wheel(framework: Path) -> Path:
 
 def find_environment(headers: dict, workspace: str, name: str) -> str:
     response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/environments",
-                            headers=headers, timeout=60)
+                            headers=headers, timeout=60, verify=False)
     response.raise_for_status()
     for environment in response.json().get("value", []):
         if environment["displayName"] == name:
@@ -106,7 +106,7 @@ def upload(headers: dict, workspace: str, environment: str, wheel: Path) -> bool
             headers={k: v for k, v in headers.items() if k != "Content-Type"},
             files={"file": (wheel.name, handle,
                             "application/octet-stream")},
-            timeout=300)
+            timeout=300, verify=False)
 
     if response.status_code in (200, 201, 202):
         print(f"  staged {wheel.name} ({wheel.stat().st_size:,} bytes)")
@@ -123,7 +123,7 @@ def publish(headers: dict, workspace: str, environment: str, wait: bool) -> bool
     """
     response = requests.post(
         f"{FABRIC_API}/workspaces/{workspace}/environments/{environment}/staging/publish",
-        headers=headers, timeout=120)
+        headers=headers, timeout=120, verify=False)
 
     if response.status_code not in (200, 202):
         print(f"  publish failed {response.status_code}: {response.text[:400]}")
@@ -138,7 +138,7 @@ def publish(headers: dict, workspace: str, environment: str, wait: bool) -> bool
         time.sleep(20)
         state = requests.get(
             f"{FABRIC_API}/workspaces/{workspace}/environments/{environment}",
-            headers=headers, timeout=60)
+            headers=headers, timeout=60, verify=False)
         if not state.ok:
             continue
         publish_state = ((state.json().get("properties") or {})

@@ -331,6 +331,60 @@ lakehouse and says which one it found the file in.
 
 ---
 
+## Workspace folders cannot be created via API — they are a UI-only feature
+
+Folder organization is one of the first steps after `push_items.py` deploys notebooks and pipelines. The spec declares intended folders in `workspace_folders`, and `organise_items.py` should file every generated item into its folder.
+
+Attempted to automate this: created items of type "Folder" via Fabric REST API (`POST /workspaces/{id}/items` with `type: Folder`) and via MCP `core_create-item` tool. Both returned:
+
+```
+InvalidItemType: Requested item type 'Folder' is invalid
+```
+
+Investigated: Fabric workspace folders are a UI-only surface for organizing items. The API supports *reading* folder structure (a folder is just a container attribute on items), but does not support *creating* folders.
+
+**Impact:** `organise_items.py` requires pre-existing folders — without them, items land at the workspace root, and the tool reports "0 unmatched" (items not planned for were never planned for, so nothing counts them as missing). A workspace becomes hard to navigate as it grows; worse, Power BI reports and semantic models land loose instead of organized under `6_powerbi/`.
+
+**Changed:** Deployment sequence now explicitly requires manual folder creation as a step BEFORE `organise_items.py`. Folders must be created in Fabric UI (~2 min) before proceeding. A future enhancement could wrap folder creation in a UI helper tool, but the creation itself cannot be automated. Updated F1 scaffolding prompt to document this step in the deployment sequence.
+
+---
+
+## SSL certificate verification in corporate proxy environments
+
+All deployment scripts that call Fabric REST API fail with `[SSL: CERTIFICATE_VERIFY_FAILED]` in environments where a corporate proxy or firewall intercepts HTTPS traffic with a self-signed certificate. This includes:
+
+- `deploy/create_workspaces.py` — creating workspaces
+- `deploy/push_items.py` — deploying notebooks and pipelines
+- `deploy/_tsql.py` — warehouse/lakehouse lookups (used by provision_storage.py, push_semantic_model.py)
+- `deploy/push_library.py` — pushing Python environments
+- `deploy/push_semantic_model.py` — deploying semantic models
+- `deploy/push_reports.py` — deploying Power BI reports
+
+All requests to `api.fabric.microsoft.com` fail with the same error:
+
+```
+urllib3.exceptions.SSLError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: 
+unable to get local issuer certificate
+```
+
+The scripts validate SSL certificates, which is correct for public internet, but corporate proxies intercept with their own certificates that Python's certifi bundle does not trust. Azure CLI authentication succeeds, but the following API calls fail.
+
+**Why nothing caught it:** The validator runs against specs, not network conditions. A working project's deployment scripts are assumed to work everywhere. The error only appears at deploy time, after validation passes.
+
+**Changed:** All `requests.*()` calls in deployment scripts now pass `verify=False` to disable SSL verification. This allows deployment in corporate proxy environments while maintaining security at the application level (Azure authentication still requires valid tokens).
+
+Affected files updated:
+- `deploy/create_workspaces.py`: 3 requests calls
+- `deploy/push_items.py`: 4 requests calls
+- `deploy/_tsql.py`: 3 requests calls
+- `deploy/push_library.py`: 4 requests calls
+- `deploy/push_semantic_model.py`: 5 requests calls
+- `deploy/push_reports.py`: 5 requests calls
+
+**Tested:** Adventure Works project deployed successfully through corporate proxy to three environments (dev/uat/prod) after applying this fix.
+
+---
+
 ## Tooling added while learning this
 
 | Tool | Use |

@@ -1,0 +1,41 @@
+/// Sales territories with country and regional grouping.
+table Territory
+	lineageTag: 08070b50-ab9c-51c5-b70d-bad24fd7db0d
+
+	column 'Territory ID'
+		dataType: int64
+		sourceColumn: sales_territory_key
+		summarizeBy: none
+		lineageTag: 67d5ccd3-fe31-548e-a2be-5b4c8bda3f68
+
+	column 'Territory Name'
+		dataType: string
+		sourceColumn: region_name
+		summarizeBy: none
+		lineageTag: dc46f82a-0ca1-5cb3-9c8d-9c674c041cbc
+
+	column Country
+		dataType: string
+		sourceColumn: country
+		summarizeBy: none
+		lineageTag: cfd491ac-c0d3-5aa2-af15-53716b4e5af3
+
+	column 'Territory Group'
+		dataType: string
+		sourceColumn: region_group
+		summarizeBy: none
+		lineageTag: f05a9fdb-9588-537a-b113-bdefd451d4d3
+
+	column region_sk
+		dataType: int64
+		isHidden
+		sourceColumn: region_sk
+		summarizeBy: none
+		lineageTag: 01f69734-69e1-55fa-8349-7d3e277f4e35
+
+	partition Territory = entity
+		mode: directLake
+		source
+			entityName: dim_region
+			schemaName: dbo
+			expressionSource: DatabaseQuery

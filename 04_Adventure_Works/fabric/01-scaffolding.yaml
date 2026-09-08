@@ -67,9 +67,9 @@ domains:
     publishes_data_product: false
 
 environments:
-  - { name: dev,  workspace: ADW_dev,  workspace_id: null, capacity_sku: F64 }
-  - { name: uat, workspace: ADW_uat, workspace_id: null, capacity_sku: F64 }
-  - { name: prod, workspace: ADW_prod, workspace_id: null, capacity_sku: F64,
+  - { name: dev,  workspace: ADW_dev,  workspace_id: bd6a388c-5be5-4c31-8c6f-856513479712, capacity_sku: F64 }
+  - { name: uat, workspace: ADW_uat, workspace_id: 44fa9ada-f578-4c5c-8148-1003890f6547, capacity_sku: F64 }
+  - { name: prod, workspace: ADW_prod, workspace_id: 0dfa04b4-1947-4303-ae1c-767d7efc2bcc, capacity_sku: F64,
       is_production: true }            # exactly one; resolved by id, never name
 
 naming:

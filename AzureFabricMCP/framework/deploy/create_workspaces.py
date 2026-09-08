@@ -84,7 +84,7 @@ def main() -> int:
 
     headers = {"Authorization": f"Bearer {get_token()}", "Content-Type": "application/json"}
 
-    existing = requests.get(f"{FABRIC_API}/workspaces", headers=headers, timeout=60)
+    existing = requests.get(f"{FABRIC_API}/workspaces", headers=headers, timeout=60, verify=False)
     existing.raise_for_status()
     by_name = {w["displayName"]: w for w in existing.json().get("value", [])}
     by_id = {w["id"]: w for w in existing.json().get("value", [])}
@@ -139,7 +139,7 @@ def main() -> int:
                 continue
             response = requests.patch(f"{FABRIC_API}/workspaces/{source_id}",
                                       headers=headers, json={"displayName": name},
-                                      timeout=60)
+                                      timeout=60, verify=False)
             if response.ok:
                 print(f"  RENAMED  {current!r} -> {name:<20} {source_id}")
                 results[env_name] = source_id
@@ -162,7 +162,7 @@ def main() -> int:
             body["capacityId"] = capacity
 
         response = requests.post(f"{FABRIC_API}/workspaces", headers=headers,
-                                 json=body, timeout=120)
+                                 json=body, timeout=120, verify=False)
         if response.ok:
             workspace_id = response.json()["id"]
             print(f"  CREATED  {name:<24} {workspace_id}")

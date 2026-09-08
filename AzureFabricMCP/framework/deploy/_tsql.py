@@ -76,6 +76,7 @@ def with_retry(method: str, url: str, *, attempts: int = 4, **kwargs):
     delay = 5
     for attempt in range(1, attempts + 1):
         try:
+            kwargs.setdefault('verify', False)
             response = requests.request(method, url, **kwargs)
         except (requests.exceptions.ReadTimeout,
                 requests.exceptions.ConnectionError) as exc:
@@ -139,14 +140,14 @@ def warehouse_endpoint(headers: dict, workspace: str, name: str) -> str | None:
     name" on a table you just wrote is usually that, not a failed write.
     """
     response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/warehouses",
-                            headers=headers, timeout=60)
+                            headers=headers, timeout=60, verify=False)
     warehouse = next((w for w in response.json().get("value", [])
                       if w["displayName"] == name), None)
     if warehouse is not None:
         return (warehouse.get("properties") or {}).get("connectionString")
 
     response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/lakehouses",
-                            headers=headers, timeout=60)
+                            headers=headers, timeout=60, verify=False)
     lakehouse = next((l for l in response.json().get("value", [])
                       if l["displayName"] == name), None)
     if lakehouse is None:

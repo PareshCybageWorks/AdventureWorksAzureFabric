@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Product Performance",
+    "description": "Product-level analysis with profitability and category breakdown."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "1860579f-7706-5918-823a-f8bbcb20983e"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "sm_sales",
+    "description": "Sales analytics model for Adventure Works, covering orders by product, reseller, territory, and salesperson. Supports sales leadership and regional managers analyzing B2C and B2B channel performance."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "44169e2d-2ab1-516c-9d06-ef656428da2f"
+  }
+}

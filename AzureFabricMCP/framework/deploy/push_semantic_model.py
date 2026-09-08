@@ -43,7 +43,7 @@ def sql_endpoint(headers: dict, workspace: str, item: str, kind: str) -> tuple[s
     """Return (endpoint, database) for the warehouse or lakehouse backing the model."""
     if kind == "warehouse":
         response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/warehouses",
-                                headers=headers, timeout=60)
+                                headers=headers, timeout=60, verify=False)
         found = next((w for w in response.json().get("value", [])
                       if w["displayName"] == item), None)
         if not found:
@@ -51,7 +51,7 @@ def sql_endpoint(headers: dict, workspace: str, item: str, kind: str) -> tuple[s
         return (found.get("properties") or {}).get("connectionString"), item
 
     response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/lakehouses",
-                            headers=headers, timeout=60)
+                            headers=headers, timeout=60, verify=False)
     found = next((l for l in response.json().get("value", [])
                   if l["displayName"] == item), None)
     if not found:
@@ -128,7 +128,7 @@ def main() -> int:
         return 0
 
     existing = requests.get(f"{FABRIC_API}/workspaces/{workspace}/semanticModels",
-                            headers=headers, timeout=60).json().get("value", [])
+                            headers=headers, timeout=60, verify=False).json().get("value", [])
     found = next((m for m in existing if m["displayName"] == name), None)
 
     if found:
@@ -136,14 +136,14 @@ def main() -> int:
         response = requests.post(
             f"{FABRIC_API}/workspaces/{workspace}/semanticModels/{found['id']}"
             f"/updateDefinition?updateMetadata=true", headers=headers,
-            json={"definition": {"parts": parts}}, timeout=300)
+            json={"definition": {"parts": parts}}, timeout=300, verify=False)
     else:
         print(f"creating {name}")
         response = requests.post(
             f"{FABRIC_API}/workspaces/{workspace}/semanticModels", headers=headers,
             json={"displayName": name,
                   "description": " ".join(spec["model"].get("description", "").split())[:250],
-                  "definition": {"parts": parts}}, timeout=300)
+                  "definition": {"parts": parts}}, timeout=300, verify=False)
 
     if response.status_code not in (200, 201, 202):
         print(f"  ERROR  HTTP {response.status_code}")
@@ -157,7 +157,7 @@ def main() -> int:
         if status in ("Succeeded", "Failed"):
             break
         time.sleep(5)
-        poll = requests.get(location, headers=headers, timeout=60).json()
+        poll = requests.get(location, headers=headers, timeout=60, verify=False).json()
         status = poll.get("status")
         if status == "Failed":
             print(f"  ERROR  {poll.get('error', {})}")

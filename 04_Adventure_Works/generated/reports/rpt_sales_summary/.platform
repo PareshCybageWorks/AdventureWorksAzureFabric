@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Sales Summary",
+    "description": "Executive-level sales overview with trends, territories, and channels."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "7c775b7a-d145-57a2-845a-9b0e079220b3"
+  }
+}

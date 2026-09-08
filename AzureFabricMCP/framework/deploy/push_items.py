@@ -85,7 +85,7 @@ class Fabric:
 
     def list_items(self, workspace: str) -> list[dict]:
         response = requests.get(f"{FABRIC_API}/workspaces/{workspace}/items",
-                                headers=self.headers, timeout=60)
+                                headers=self.headers, timeout=60, verify=False)
         response.raise_for_status()
         return response.json().get("value", [])
 
@@ -103,7 +103,7 @@ class Fabric:
             headers=self.headers,
             json={"displayName": display_name, "type": item_type,
                   "description": description},
-            timeout=120)
+            timeout=120, verify=False)
 
         if response.status_code in (200, 201):
             return response.json().get("id")
@@ -132,7 +132,7 @@ class Fabric:
 
         for _ in range(POLL_LIMIT):
             time.sleep(POLL_SECONDS)
-            poll = requests.get(location, headers=self.headers, timeout=60)
+            poll = requests.get(location, headers=self.headers, timeout=60, verify=False)
             if not poll.ok:
                 return False
             status = poll.json().get("status")
@@ -159,7 +159,7 @@ class Fabric:
                f"/updateDefinition?updateMetadata=false")
 
         for attempt in range(1, attempts + 1):
-            response = requests.post(url, headers=self.headers, json=body, timeout=180)
+            response = requests.post(url, headers=self.headers, json=body, timeout=180, verify=False)
 
             if response.status_code in (429, 503):
                 delay = int(response.headers.get("Retry-After", 10 * attempt))

@@ -1,0 +1,19 @@
+relationship ffe0daa2-b07f-5812-94b8-fae232672806
+	fromColumn: Sales.product_sk
+	toColumn: Product.product_sk
+
+relationship dff23401-f7e9-597f-b088-0fc33537376c
+	fromColumn: Sales.reseller_sk
+	toColumn: Reseller.reseller_sk
+
+relationship 81d968a4-1abf-579c-ac1b-b43eb7ca4557
+	fromColumn: Sales.salesperson_sk
+	toColumn: Salesperson.salesperson_sk
+
+relationship 9e50a27e-e745-5aee-8e10-02fe18763da6
+	fromColumn: Sales.region_sk
+	toColumn: Territory.region_sk
+
+relationship c6dcc690-439a-548c-a7dd-d8335652e7a2
+	fromColumn: Sales.order_date_sk
+	toColumn: Date.date_sk
