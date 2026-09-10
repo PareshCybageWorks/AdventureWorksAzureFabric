@@ -1,421 +1,72 @@
-# AzureFabricMCP Project Summary
+# AzureFabricMCP — status
 
-## 🎯 Project Overview
+## Corrected 2026-08-27
 
-**AzureFabricMCP** is a comprehensive, production-ready skill library for Azure Fabric, Power BI, Data Operations, DBT, and GitHub Actions. Designed for AI-assisted data engineering and analytics automation.
+This file previously claimed "55+ skills, 15,000+ lines, Production Ready"
+across five workload domains, with a matching directory tree of `plugins/`,
+`agents/`, `config/`, `scripts/`, `examples/`, and a nested `docs/` structure.
+None of that content was ever written; the tree below is what is actually on
+disk. See `CLAUDE.md` for why, and where the real work lives instead.
 
-### Key Metrics
+## What's real
 
-| Metric | Count |
-|--------|-------|
-| **Total Skills** | 55+ |
-| **Fabric Skills** | 15 |
-| **Power BI Skills** | 12 |
-| **Data Ops Skills** | 10 |
-| **DBT Skills** | 10 |
-| **GitHub Actions Skills** | 8 |
-| **Total Content Lines** | 15,000+ |
-| **Code Examples** | 650+ |
-| **Diagrams/Tables** | 100+ |
-| **Documentation Pages** | 30+ |
+**The framework** (`framework/`) — a spec-driven pipeline for Fabric + Power
+BI, not a skill library. Ten stages, each with a JSON Schema contract, an
+interview prompt, a blank template, and a generator that turns a filled spec
+into notebooks, pipelines, warehouse DDL, TMDL, or PBIR:
 
-## 📁 Complete Folder Structure
+| Track | Stages | Contracts | Prompts | Generators |
+|---|---|---|---|---|
+| Fabric | F1 scaffolding → F5 gold | 5 | 5 | 4 (notebooks, pipelines, DDL, workflows shared across tracks) |
+| Power BI | P1 semantic model, P2 reports | 2 | 2 | 2 (TMDL, PBIR) |
+| DataOps | D1 monitoring, D2 audit | 2 | 2 | 2 (monitoring, audit) |
+| CI/CD | C1 pipeline | 1 | 1 | shared workflow generator |
 
-```
-AzureFabricMCP/
-│
-├── README.md                        # Main project overview
-├── CLAUDE.md                        # Claude skills configuration (MASTER FILE)
-├── PROJECT_SUMMARY.md               # This file
-│
-├── skills/                          # All skills organized by workload (55+)
-│   ├── fabric/                      # 15 Fabric skills
-│   │   ├── SKILLS_INDEX.md          # Fabric skills directory
-│   │   ├── provisioning.md
-│   │   ├── workspace-operations.md
-│   │   ├── capacity-management.md
-│   │   ├── lakehouse-config.md
-│   │   ├── data-ingestion.md
-│   │   ├── shortcuts-management.md
-│   │   ├── sql-analytics.md
-│   │   ├── notebooks-automation.md
-│   │   ├── git-integration.md
-│   │   ├── api-automation.md
-│   │   ├── monitoring.md
-│   │   ├── diagnostics.md
-│   │   ├── security-config.md
-│   │   ├── migration.md
-│   │   └── cost-optimization.md
-│   │
-│   ├── powerbi/                     # 12 Power BI skills
-│   │   ├── SKILLS_INDEX.md
-│   │   ├── semantic-modeling.md
-│   │   ├── dax-fundamentals.md
-│   │   ├── dax-advanced.md
-│   │   ├── report-design.md
-│   │   ├── mobile-optimization.md
-│   │   ├── paginated-reports.md
-│   │   ├── deployment-automation.md
-│   │   ├── refresh-scheduling.md
-│   │   ├── performance-tuning.md
-│   │   ├── rls-security.md
-│   │   ├── dataflow-automation.md
-│   │   └── embedded-analytics.md
-│   │
-│   ├── dataops/                     # 10 Data Ops skills
-│   │   ├── SKILLS_INDEX.md
-│   │   ├── quality-expectations.md
-│   │   ├── sla-monitoring.md
-│   │   ├── data-contracts.md
-│   │   ├── anomaly-detection.md
-│   │   ├── data-lineage.md
-│   │   ├── audit-logging.md
-│   │   ├── data-profiling.md
-│   │   ├── reconciliation.md
-│   │   ├── incident-response.md
-│   │   └── cost-analysis.md
-│   │
-│   ├── dbt/                         # 10 DBT skills
-│   │   ├── SKILLS_INDEX.md
-│   │   ├── dbt-fundamentals.md
-│   │   ├── source-freshness.md
-│   │   ├── testing-framework.md
-│   │   ├── dbt-docs.md
-│   │   ├── slim-ci.md
-│   │   ├── snapshots.md
-│   │   ├── dbt-cloud.md
-│   │   ├── fabric-integration.md
-│   │   ├── seeds-management.md
-│   │   └── performance-optimization.md
-│   │
-│   ├── github-actions/              # 8 GitHub Actions skills
-│   │   ├── SKILLS_INDEX.md
-│   │   ├── ci-cd-setup.md
-│   │   ├── testing-automation.md
-│   │   ├── fabric-deployment.md
-│   │   ├── powerbi-deployment.md
-│   │   ├── multi-environment.md
-│   │   ├── secrets-management.md
-│   │   ├── deployment-gates.md
-│   │   └── notification-integration.md
-│   │
-│   └── common/                      # Shared utilities (3 skills)
-│       ├── authentication.md
-│       ├── error-handling.md
-│       └── best-practices.md
-│
-├── plugins/                         # Pre-configured MCP plugins
-│   ├── fabric-authoring/
-│   ├── fabric-consumption/
-│   ├── fabric-operations/
-│   ├── powerbi-modeling/
-│   └── plugins-config.json
-│
-├── agents/                          # Specialized agents
-│   ├── data-engineer-agent.md
-│   ├── analytics-builder-agent.md
-│   ├── devops-automator-agent.md
-│   └── agents-config.json
-│
-├── docs/                            # Comprehensive documentation
-│   ├── getting-started/
-│   │   ├── installation.md
-│   │   ├── quick-start.md
-│   │   ├── architecture.md
-│   │   └── prerequisites.md
-│   │
-│   ├── workload-guides/
-│   │   ├── fabric-guide.md
-│   │   ├── powerbi-guide.md
-│   │   ├── dataops-guide.md
-│   │   ├── dbt-guide.md
-│   │   └── github-actions-guide.md
-│   │
-│   ├── tutorials/
-│   │   ├── end-to-end-pipeline.md
-│   │   ├── multi-environment-setup.md
-│   │   ├── quality-framework.md
-│   │   └── cost-optimization.md
-│   │
-│   ├── advanced/
-│   │   ├── performance-tuning.md
-│   │   ├── security-compliance.md
-│   │   ├── disaster-recovery.md
-│   │   └── scaling-strategies.md
-│   │
-│   └── troubleshooting/
-│       └── common-issues.md
-│
-├── config/                          # Configuration files
-│   ├── fabric-workspaces-spec.json
-│   ├── powerbi-models-spec.json
-│   ├── dbt-project-config.yml
-│   ├── github-workflow-spec.json
-│   ├── data-contracts.yaml
-│   ├── .env.example
-│   └── README.md
-│
-├── scripts/                         # Automation scripts
-│   ├── provision-fabric.sh
-│   ├── deploy-dbt.sh
-│   ├── deploy-powerbi.py
-│   ├── setup-github-actions.py
-│   ├── verify-setup.py
-│   ├── requirements.txt
-│   └── README.md
-│
-├── examples/                        # Example projects
-│   ├── ecommerce-analytics/
-│   │   ├── README.md
-│   │   ├── fabric-spec.json
-│   │   ├── dbt-project.yml
-│   │   └── powerbi-model.json
-│   │
-│   ├── financial-reporting/
-│   │   ├── README.md
-│   │   ├── multi-env-config.json
-│   │   └── governance-setup.md
-│   │
-│   ├── real-time-monitoring/
-│   │   ├── README.md
-│   │   ├── streaming-config.json
-│   │   └── alerting-setup.md
-│   │
-│   └── enterprise-dw/
-│       ├── README.md
-│       ├── migration-plan.md
-│       └── infrastructure-spec.json
-│
-├── .claude-plugin/                  # Claude plugin configuration
-│   ├── claude_config.json
-│   └── manifest.json
-│
-├── .github/                         # GitHub configuration
-│   ├── workflows/
-│   │   ├── fabric-pipeline.yml
-│   │   ├── powerbi-deployment.yml
-│   │   ├── dbt-workflow.yml
-│   │   └── multi-environment.yml
-│   │
-│   ├── ISSUE_TEMPLATE/
-│   └── PULL_REQUEST_TEMPLATE/
-│
-├── mcp-setup/                       # MCP server configuration
-│   ├── fabric-mcp-setup.md
-│   ├── powerbi-mcp-setup.md
-│   ├── dbt-api-setup.md
-│   └── github-api-setup.md
-│
-├── .gitignore
-├── LICENSE
-└── CONTRIBUTING.md
-```
+Plus a deploy layer (13 scripts: workspace creation, item/library/file push,
+git mirroring), an operational toolset (14 scripts: status, dry-run, REST
+extraction, notebook diagnosis, warehouse/model queries), and `ttfabric` — a
+PySpark runtime library (cleansing, SCD2, quality, warehouse routing,
+monitoring) shipped as a wheel on the Spark environment, not copied
+per-lakehouse.
 
-## 🎯 Key Highlights
+Verified end to end against a real Fabric tenant: `sm_commerce` runs
+DirectLake over `wh_gold`, all 17 measures evaluate, revenue reconciles from
+silver to gold exactly. See `framework/LEARNINGS.md` for what that verification
+actually cost — the platform behaviours that don't announce themselves as
+errors.
 
-### 1. **Comprehensive Skill Coverage**
+**Skills** (`skills/`) — two files, written because a behaviour cost real
+debugging time and the explanation didn't belong in a stage prompt:
+`fabric/lakehouse-warehouse-topology.md` and `powerbi/direct-lake-and-tmdl.md`.
+`dataops/`, `dbt/`, `github-actions/`, and `common/` are empty folders.
 
-✅ **Fabric (15 skills)** — Everything from workspace provisioning to cost optimization  
-✅ **Power BI (12 skills)** — Semantic modeling through deployment automation  
-✅ **Data Ops (10 skills)** — Quality validation to incident response  
-✅ **DBT (10 skills)** — Fundamentals to advanced optimization  
-✅ **GitHub Actions (8 skills)** — CI/CD setup through multi-environment deployment  
+**Docs** (`docs/`) — `ARCHITECTURE.md`, `CI-SETUP.md`, and three architecture
+diagrams (two `.drawio`, one `.png`). `CI-SETUP.md` is accurate and current:
+what has to exist in Azure/GitHub before deploy workflows run.
 
-### 2. **Production-Ready Quality**
+## What's empty
 
-- 15,000+ lines of professional content
-- 650+ working code examples
-- Best practices & patterns throughout
-- Troubleshooting & error handling
-- Security & compliance guidance
+`plugins/`, `agents/`, `config/`, `scripts/`, `examples/`, `mcp-setup/` — zero
+files in every one. No `.github/` workflows, no `.claude-plugin/` manifest,
+despite both being described in the file this replaces.
 
-### 3. **AI-First Design**
+## The five projects built on this framework
 
-- Auto-discovery by Claude based on keywords
-- Cross-referenced skills for easy navigation
-- Explicit examples for prompt usage
-- Skill prerequisite dependencies mapped
-- Learning paths by role
+Sibling folders to `AzureFabricMCP/`, one repository each in production, all
+using `framework/tools/project_status.py` for ground truth rather than a
+written summary:
 
-### 4. **Enterprise Focus**
+| Project | Stages filled | Domain |
+|---|---|---|
+| `01_demo-project` | 10/10 | commerce demo |
+| `02_demo-servicenow` | 0/10 — template only | ServiceNow (superseded by 03?) |
+| `03_live_demo` | 10/10 | ServiceNow ITSM, time tracking, infra KPIs |
+| `04_PushkarDemo` | 10/10, validated (33 passed, 0 errors, 3 deliberate warnings) | Kastle workplace occupancy, local Postgres |
+| `05_rahul_demo` | 6/10 | in progress |
 
-- Multi-environment promotion (Dev/QA/UAT/Prod)
-- Governance & compliance patterns
-- Security & data protection
-- Cost optimization strategies
-- Scalability & performance tuning
+## Versioning
 
-## 📊 Skill Distribution
-
-```
-Fabric (15)     ███████████░░░░░░░░░░░░░░░░ 27%
-Power BI (12)   ██████████░░░░░░░░░░░░░░░░░ 22%
-DataOps (10)    ████████░░░░░░░░░░░░░░░░░░░ 18%
-DBT (10)        ████████░░░░░░░░░░░░░░░░░░░ 18%
-GitHub Actn (8) ██████░░░░░░░░░░░░░░░░░░░░░ 15%
-```
-
-## 🚀 Usage Patterns
-
-### Pattern 1: Complete Data Platform
-
-```
-Provision Fabric → Load DBT → Validate Quality → Deploy Power BI → Automate Delivery
-(fabric skills) → (dbt skills) → (dataops skills) → (powerbi skills) → (github-actions skills)
-```
-
-### Pattern 2: Analytics Engineering
-
-```
-Bronze Layer → Silver Transformation → Gold Aggregation → Semantic Model → Reports
-(fabric)     → (dbt)                 → (dbt)            → (powerbi)      → (powerbi)
-```
-
-### Pattern 3: Multi-Environment CI/CD
-
-```
-Code Push → Test → Dev Deploy → QA Deploy → Approval → Prod Deploy → Monitor
-                   (fabric)    (fabric)            (powerbi)         (dataops)
-```
-
-## 📈 Content Breakdown
-
-| Category | Count | Lines |
-|----------|-------|-------|
-| Fabric Skills | 15 | 4,500+ |
-| Power BI Skills | 12 | 3,600+ |
-| Data Ops Skills | 10 | 2,500+ |
-| DBT Skills | 10 | 3,000+ |
-| GitHub Actions Skills | 8 | 2,000+ |
-| Common/Utilities | 3 | 800+ |
-| Documentation | 30+ pages | 2,000+ |
-| **Total** | **55+ Skills** | **15,000+** |
-
-## 🎓 Learning Resources
-
-### For Data Engineers
-- Fabric provisioning → Lakehouse config → DBT modeling → Quality validation → CI/CD
-
-### For Analytics Engineers
-- Power BI semantic modeling → DAX → Report design → Deployment → Optimization
-
-### For DevOps Engineers
-- Fabric operations → GitHub Actions → Multi-environment → Monitoring → Cost optimization
-
-## 🔧 Technology Stack
-
-- **Data Platform:** Microsoft Azure Fabric, OneLake
-- **Analytics:** Power BI, semantic models, DAX
-- **Transformation:** DBT, PySpark, SQL
-- **Quality:** Great Expectations, data contracts
-- **Automation:** GitHub Actions, CI/CD pipelines
-- **Orchestration:** dbt Cloud, Fabric notebooks
-- **Infrastructure:** Azure, Service Principals, Key Vault
-
-## 🔐 Security & Compliance
-
-- Service Principal authentication
-- Secrets management (GitHub Secrets, Azure Key Vault)
-- Row-level & object-level security (RLS/OLS)
-- Audit logging & compliance tracking
-- Data encryption & protection
-- Access control & governance
-
-## 📊 Example Projects Included
-
-1. **E-commerce Analytics** — Complete E2E pipeline example
-2. **Financial Reporting** — Multi-environment with governance
-3. **Real-Time Monitoring** — Streaming + batch workloads
-4. **Enterprise Data Warehouse** — Migration scenario
-
-## 🚀 Quick Start (3 Steps)
-
-```bash
-# 1. Setup
-cd AzureFabricMCP
-pip install -r scripts/requirements.txt
-cp config/.env.example .env
-# Edit .env with your credentials
-
-# 2. Provision
-./scripts/provision-fabric.sh
-
-# 3. Deploy
-./scripts/deploy-dbt.sh
-./scripts/deploy-powerbi.py
-```
-
-## 📞 How to Use with Claude
-
-```
-"Walk me through setting up a complete data platform with Fabric, DBT, and Power BI"
-
-Claude automatically loads:
-- fabric/provisioning.md
-- fabric/lakehouse-config.md
-- dbt/dbt-fundamentals.md
-- powerbi/semantic-modeling.md
-- github-actions/ci-cd-setup.md
-- dataops/quality-expectations.md
-```
-
-## ✅ Quality Assurance
-
-Each skill includes:
-- Clear objectives & outcomes
-- Key concepts & terminology
-- 5-10 working code examples
-- Best practices & patterns
-- Common pitfalls & troubleshooting
-- Prerequisites & dependencies
-- Next steps for learning
-
-## 📋 Checklist: What You Get
-
-- ✅ 55+ professional skills (15,000+ lines)
-- ✅ 650+ working code examples
-- ✅ 4 complete example projects
-- ✅ Comprehensive documentation
-- ✅ Pre-configured GitHub Actions
-- ✅ Environment templates (.env)
-- ✅ AI-optimized for Claude discovery
-- ✅ Production-ready patterns
-- ✅ Security & compliance guidance
-- ✅ Learning paths by role
-
-## 🎯 Next Steps
-
-1. **Read:** `README.md` for overview
-2. **Configure:** Set up `.env` with credentials
-3. **Explore:** Review `CLAUDE.md` for skill navigation
-4. **Learn:** Follow skill indexes by workload
-5. **Build:** Use example projects as templates
-6. **Automate:** Setup GitHub Actions workflows
-
-## 📝 License & Contributing
-
-- **License:** MIT License
-- **Contributing:** See CONTRIBUTING.md
-- **Issues:** Report in GitHub Issues
-- **Discussions:** Start GitHub Discussion
-
----
-
-## Summary
-
-**AzureFabricMCP** is a complete, professional, production-ready skill library for building data platforms with Azure Fabric, Power BI, DBT, Data Ops, and GitHub Actions. Perfect for:
-
-- ✅ Data engineers building pipelines
-- ✅ Analytics engineers creating reports
-- ✅ DevOps engineers automating deployment
-- ✅ Teams standardizing on a data platform
-- ✅ Enterprises implementing governance
-- ✅ AI assistants helping with automation
-
-**Status:** ✅ **PRODUCTION READY**  
-**Version:** 1.0  
-**Released:** July 20, 2026
-
----
-
-**Ready to build?** Start with `README.md` → `CLAUDE.md` → Choose your path! 🚀
+Projects pin a framework tag (`v0.1.0` is current) in their CI pipeline, so a
+framework change cannot break a project's build without a commit in that
+project saying so. See the top-level `README.md` for the two-repository split
+this implies, and why `AzureFabricMCP` must be the checkout directory name.

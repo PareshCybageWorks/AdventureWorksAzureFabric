@@ -98,6 +98,7 @@ def main() -> int:
     headers = {"Authorization": f"Bearer {token_for(FABRIC_SCOPE)}",
                "Content-Type": "application/json"}
     items = requests.get(f"{API}/workspaces/{workspace}/items?type=Notebook",
+                         verify=False,
                          headers=headers, timeout=60).json().get("value", [])
     item_id = next((i["id"] for i in items if i["displayName"] == args.name), None)
     if not item_id:
@@ -162,7 +163,7 @@ def main() -> int:
 
     response = requests.post(
         f"{API}/workspaces/{workspace}/items/{item_id}/updateDefinition",
-        headers=headers, timeout=120,
+        headers=headers, timeout=120, verify=False,
         json={"definition": {"format": "ipynb", "parts": [
             {"path": "notebook-content.ipynb",
              "payload": base64.b64encode(text.encode()).decode(),
@@ -174,7 +175,7 @@ def main() -> int:
     time.sleep(10)
     run = requests.post(
         f"{API}/workspaces/{workspace}/items/{item_id}/jobs/instances"
-        f"?jobType=RunNotebook", headers=headers, json={}, timeout=60)
+        f"?jobType=RunNotebook", headers=headers, json={}, timeout=60, verify=False)
     instance = run.headers.get("Location", "").rsplit("/", 1)[-1]
     print(f"running {args.name} with its body wrapped...")
 
@@ -182,7 +183,7 @@ def main() -> int:
         time.sleep(20)
         state = requests.get(
             f"{API}/workspaces/{workspace}/items/{item_id}/jobs/instances/{instance}",
-            headers=headers, timeout=60)
+            headers=headers, timeout=60, verify=False)
         if state.status_code == 200 and \
                 state.json().get("status") not in ("InProgress", "NotStarted"):
             print(f"status: {state.json().get('status')}")
@@ -191,7 +192,7 @@ def main() -> int:
     read = requests.get(
         f"{ONELAKE}/{workspace}/{scratch}/Files/{out_file}",
         headers={"Authorization": f"Bearer {token_for(STORAGE_SCOPE)}"},
-        timeout=60)
+        timeout=60, verify=False)
 
     print("\n" + "=" * 70)
     if read.status_code == 200:

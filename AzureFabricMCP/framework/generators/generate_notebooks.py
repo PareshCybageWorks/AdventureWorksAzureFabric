@@ -385,6 +385,8 @@ def bronze_notebook(platform: dict, mapping: dict, entity: dict,
         f'    .option("delimiter", "{options.get("delimiter", ",")}")\n'
         f'    .option("encoding", "{options.get("encoding", "utf-8")}")\n'
         f'    .option("quote", \'{options.get("quote", chr(34))}\')\n'
+        f'    .option("dateFormat", "yyyy-MM-dd")\n'
+        f'    .option("timestampFormat", "yyyy-MM-dd HH:mm:ss")\n'
         f'    .schema(schema)\n'
         f'    .csv(landing_path))\n'
         f'\n'
@@ -922,6 +924,8 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
 
         if policy == "quarantine" and how == "inner":
             quarantine = join.get("quarantine_table") or f"{fact['name']}_orphans"
+            # Remove dbo. prefix if present (Fabric lakehouse uses unqualified names)
+            quarantine = quarantine.replace("dbo.", "")
             # Captured BEFORE the join, using left_anti -- the rows the inner
             # join is about to discard. After the join they are simply gone and
             # there is nothing left to count.
@@ -1070,7 +1074,13 @@ def gold_fact_notebook(platform: dict, fact: dict, gold: dict) -> dict:
     cells.append(code_cell(
         f'# ---- Write -------------------------------------------------------\n'
         f'final_columns = {final!r}\n'
-        f'out = (df.select(*[c for c in final_columns if c in df.columns])\n'
+        f'out = df.select(*[c for c in final_columns if c in df.columns])\n'
+        f'# Drop existing audit columns before re-adding (silver layer may have them)\n'
+        f'for col in ["_built_at", "_load_id", "_processed_at"]:\n'
+        f'    if col in out.columns:\n'
+        f'        out = out.drop(col)\n'
+        f'# Add gold audit columns\n'
+        f'out = (out\n'
         f'    .withColumn("_built_at", F.current_timestamp())\n'
         f'    .withColumn("_load_id", F.lit(load_id)))\n'
         f'\n'

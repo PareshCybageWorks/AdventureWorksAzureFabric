@@ -58,7 +58,7 @@ def get_token() -> str:
 
 def notebooks_in(workspace: str, headers: dict) -> dict[str, str]:
     response = requests.get(f"{API}/workspaces/{workspace}/items?type=Notebook",
-                            headers=headers, timeout=60)
+                            headers=headers, timeout=60, verify=False)
     response.raise_for_status()
     return {i["displayName"]: i["id"] for i in response.json().get("value", [])}
 
@@ -66,7 +66,7 @@ def notebooks_in(workspace: str, headers: dict) -> dict[str, str]:
 def start(workspace: str, item_id: str, headers: dict) -> str | None:
     response = requests.post(
         f"{API}/workspaces/{workspace}/items/{item_id}/jobs/instances"
-        f"?jobType=RunNotebook", headers=headers, json={}, timeout=60)
+        f"?jobType=RunNotebook", headers=headers, json={}, timeout=60, verify=False)
     if response.status_code not in (200, 202):
         return None
     return response.headers.get("Location", "").rsplit("/", 1)[-1] or None
@@ -75,7 +75,7 @@ def start(workspace: str, item_id: str, headers: dict) -> str | None:
 def poll(workspace: str, item_id: str, instance: str, headers: dict) -> dict:
     response = requests.get(
         f"{API}/workspaces/{workspace}/items/{item_id}/jobs/instances/{instance}",
-        headers=headers, timeout=60)
+        headers=headers, timeout=60, verify=False)
     return response.json() if response.status_code == 200 else {}
 
 

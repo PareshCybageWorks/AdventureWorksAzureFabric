@@ -120,7 +120,7 @@ def get_storage_ids(project: Path, name: str) -> dict[str, str]:
     token = _tsql.credential().get_token(_tsql.FABRIC_SCOPE).token
     response = requests.get(
         f"https://api.fabric.microsoft.com/v1/workspaces/{workspace}/items",
-        headers={"Authorization": f"Bearer {token}"}, timeout=90)
+        headers={"Authorization": f"Bearer {token}"}, timeout=90, verify=False)
     if not response.ok:
         return {}
 

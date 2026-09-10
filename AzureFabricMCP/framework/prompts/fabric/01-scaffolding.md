@@ -119,6 +119,25 @@ with validation errors outstanding.
 ```bash
 python AzureFabricMCP/framework/deploy/create_workspaces.py --project <project> --capacity <id>
 python AzureFabricMCP/framework/deploy/provision_storage.py --project <project> --env dev
+```
+
+**Then, create workspace folders manually in Fabric UI** (~2 minutes):
+
+Fabric workspace folders are a UI-only feature and cannot be created
+programmatically. Using the Fabric Admin Portal, create the folder structure
+defined in `workspace_folders`:
+
+- `0_config/notebook/`
+- `1_bronze/notebook/`, `1_bronze/pipeline/`
+- `2_silver/notebook/`, `2_silver/pipeline/`
+- `3_gold/notebook/`, `3_gold/pipeline/`
+- `4_master/pipeline/`
+- `5_datastore/`
+- `6_powerbi/semanticmodel/`, `6_powerbi/report/`
+
+Then continue:
+
+```bash
 python AzureFabricMCP/framework/deploy/organise_items.py   --project <project> --env dev
 ```
 
@@ -218,10 +237,13 @@ itself as an error.
 silently selected an F2. Spark ran, slowly, with nothing to indicate why. Derive
 capacity explicitly or refuse to guess.
 
-**Item creation cannot set a folder.** Neither the MCP nor the REST create-item
-call accepts one, so every item is born at the workspace root. Folder placement
-is a separate step (`organise_items.py`). Treat a mismatch between spec and
-workspace as drift to correct, not as the spec being aspirational.
+**Workspace folders cannot be created programmatically.** Fabric workspace
+folders are a UI-only feature; attempting to create items of type "Folder" via
+API returns `InvalidItemType`. Every item is born at the workspace root until
+folders exist. Folders must be created manually in Fabric UI before running
+`organise_items.py`. Without pre-existing folders, `organise_items` leaves items
+at root and reports "0 unmatched" (items not planned for were never planned for),
+which masks misalignment between spec and workspace.
 
 **Gold written to the silver lakehouse.** A notebook's default lakehouse cannot
 be a Warehouse, so gold notebooks default to the lakehouse they *read* from —
