@@ -1,0 +1,80 @@
+# =============================================================================
+# fabric/04-silver.yaml -- Stage F4  [TEMPLATE]
+# =============================================================================
+# Cleansed STAGING (stg_*), not a dimensional model. Nothing is dropped
+# silently: count(bronze) == count(silver) + count(quarantine).
+#
+# Procedure: framework/prompts/fabric/04-silver.md
+# Contract : framework/contracts/fabric/04-silver.schema.json
+#
+# `fn` values are generated from ttfabric REGISTRY. After adding a rule to the
+# library, run generators/sync_contract_rules.py or validation fails.
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: silver
+  domain: <domain>
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  write_mode: overwrite        # silver is derived and fully rebuildable
+  format: delta
+  scd: type1                   # history belongs to gold
+  quarantine:
+    enabled: true              # not optional -- the layer identity depends on it
+    table_suffix: _quarantine
+    retain_days: 90
+    # Must match silver's own mode. Silver is rebuilt each run, so an appended
+    # quarantine accumulates rejects from every previous build.
+    write_mode: overwrite
+    columns: [_rejected_by, _rejected_at, _load_id]
+
+# Declaration order is dependency order.
+tables:
+  - target: stg_<entity>
+    source: bronze_<source>_<entity>
+    description: <what one row represents once cleansed>
+    load_pattern: full_refresh
+    # What identifies the THING, not the surrogate id. For customers this is
+    # usually email: a retried load re-delivers the same person under the same
+    # id, but a re-registration produces a new id for the same person.
+    business_key: [<natural_key>]
+    depends_on: []             # silver tables that must be built first
+
+    columns:
+      - { source: <src_col>, target: <tgt_col>, type: string, nullable: false, key: business, transforms: [trim, lower] }
+      - { source: null, target: <derived_col>, type: string, nullable: false, expression: "<spark sql expression>" }
+
+    # Order is load-bearing:
+    #   cast -> transform -> dedupe -> integrity -> recompute -> hash
+    # Deduplication precedes referential integrity so a duplicate is never
+    # counted as a broken reference.
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [<natural_key>], keep: latest, order_by: ["updated_at desc"] }
+        handles: DUP-001
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: <fk>, references: stg_<parent>.<pk> }
+        on_reject: quarantine
+        description: >-
+          Quarantined rather than routed to an unknown member -- bucketing an
+          orphan would make a genuine upstream deletion look like ordinary data.
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+reconciliation:
+  - id: SILVER-RECON-001
+    description: Every child row has a surviving parent.
+    assertion: "<expression>"
+    on_failure: fail
+  - id: SILVER-RECON-003
+    description: Every bronze row is accounted for -- kept or quarantined.
+    assertion: "count(bronze) == count(silver) + count(quarantine)"
+    on_failure: fail

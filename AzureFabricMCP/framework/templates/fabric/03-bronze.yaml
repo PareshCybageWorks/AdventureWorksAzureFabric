@@ -1,0 +1,59 @@
+# =============================================================================
+# fabric/03-bronze.yaml -- Stage F3  [TEMPLATE]
+# =============================================================================
+# Landing only. Do not transform: every defect declared in F2 must survive
+# intact, or a silver bug becomes indistinguishable from an upstream change and
+# a replay will not reproduce the original state.
+#
+# Procedure: framework/prompts/fabric/03-bronze.md
+# Contract : framework/contracts/fabric/03-bronze.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: bronze
+  domain: <domain>
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  source_system: <source_id>
+  write_mode: append           # only permitted value -- bronze is immutable
+  format: delta
+  partition_by: [ingest_date]  # makes replay a partition filter, not a full scan
+  schema_evolution: additive_only
+  on_schema_drift: fail        # a type change stops the load rather than corrupting it
+
+tables:
+  - target: bronze_<source>_<entity>
+    source_entity: "<source>.<entity>"
+    load_pattern: incremental
+    watermark:
+      # MANDATORY for incremental. Without it every re-run re-appends the whole
+      # source, and silver deduplication HIDES it -- the silver counts stay
+      # correct while bronze silently multiplies.
+      column: updated_at
+      initial_value: "1900-01-01T00:00:00Z"
+    columns: passthrough       # only permitted value; exclusions belong in silver
+    excluded_columns: []       # declared even when empty
+
+landing_checks:
+  # These test whether the file ARRIVED, not whether its contents are any good.
+  - id: header_matches_registry
+    description: >-
+      Column names AND order match 02-sources. The header must be read
+      separately, without the declared schema -- reading it from the loaded
+      frame returns the schema's own names, so the check compares the schema to
+      itself and can never fail.
+    on_failure: fail
+  - id: row_count_not_zero
+    description: A zero-row file almost always means a broken export.
+    on_failure: fail
+  - id: row_count_within_order_of_magnitude
+    description: Catches a truncated or duplicated export.
+    on_failure: warn
+  - id: encoding_readable
+    description: Parses with the declared delimiter and quoting.
+    on_failure: fail

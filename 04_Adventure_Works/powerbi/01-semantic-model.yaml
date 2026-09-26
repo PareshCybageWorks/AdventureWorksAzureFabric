@@ -1,0 +1,258 @@
+version: 1
+
+# =============================================================================
+# P1 Semantic Model -- Adventure Works Sales
+# =============================================================================
+
+model:
+  name: sm_sales
+  description: >-
+    Sales analytics model for Adventure Works, covering orders by product,
+    reseller, territory, and salesperson. Supports sales leadership and regional
+    managers analyzing B2C and B2B channel performance.
+  culture: en-US
+
+  storage_mode: direct_lake
+  source:
+    item: wh_gold
+    kind: warehouse
+
+defaults:
+  hide_columns_matching:
+    - "_*"
+    - "*_sk"
+    - "_tracked_hash"
+
+tables:
+  # --- fact ------------------------------------------------------------------
+  - name: Sales
+    source_table: dbo.fct_sales
+    kind: fact
+    description: One row per sales order with product, quantity, revenue, and cost.
+    columns:
+      - source: sales_order_number
+        name: Order Number
+      - source: order_date
+        name: Order Date
+      - source: order_quantity
+        name: Line Quantity
+        format: "#,0"
+        hidden: true
+      - source: unit_price
+        name: Line Unit Price
+        format: "$#,0.00"
+        hidden: true
+      - source: sales_revenue
+        name: Line Revenue
+        format: "$#,0.00"
+        hidden: true
+      - source: sales_cost
+        name: Line Cost
+        format: "$#,0.00"
+        hidden: true
+      - source: gross_profit
+        name: Line Gross Profit
+        format: "$#,0.00"
+        hidden: true
+      - source: gross_margin_pct
+        name: Line Margin %
+        format: "0.00%"
+        hidden: true
+
+  # --- dimensions ------------------------------------------------------------
+  - name: Product
+    source_table: dbo.dim_product
+    kind: dimension
+    key: product_sk
+    description: Product catalog with category and cost.
+    columns:
+      - source: product_key
+        name: Product ID
+      - source: product_name
+        name: Product Name
+      - source: category
+        name: Category
+      - source: subcategory
+        name: Subcategory
+      - source: standard_cost
+        name: Standard Cost
+        format: "$#,0.00"
+
+  - name: Reseller
+    source_table: dbo.dim_reseller
+    kind: dimension
+    key: reseller_sk
+    description: B2B reseller (distributor) directory with business type and location.
+    columns:
+      - source: reseller_key
+        name: Reseller ID
+      - source: reseller_name
+        name: Reseller Name
+      - source: business_type
+        name: Channel
+      - source: city
+        name: City
+      - source: state_province
+        name: State/Province
+      - source: country_region
+        name: Country/Region
+
+  - name: Territory
+    source_table: dbo.dim_region
+    kind: dimension
+    key: region_sk
+    description: Sales territories with country and regional grouping.
+    columns:
+      - source: sales_territory_key
+        name: Territory ID
+      - source: region_name
+        name: Territory Name
+      - source: country
+        name: Country
+      - source: region_group
+        name: Territory Group
+
+  - name: Salesperson
+    source_table: dbo.dim_salesperson
+    kind: dimension
+    key: salesperson_sk
+    description: Sales staff with title and UPN for row-level security.
+    columns:
+      - source: employee_key
+        name: Employee ID
+      - source: employee_id
+        name: Employee Number
+      - source: salesperson_name
+        name: Salesperson Name
+      - source: title
+        name: Title
+      - source: upn
+        name: UPN
+        hidden: true
+
+  # --- date ------------------------------------------------------------------
+  - name: Date
+    source_table: dbo.dim_date
+    kind: date
+    key: date_sk
+    description: Date dimension for time-based analysis.
+    columns:
+      - source: full_date
+        name: Date
+      - source: year
+        name: Year
+        hidden: true
+      - source: quarter
+        name: Quarter Number
+        hidden: true
+      - source: month
+        name: Month Number
+        hidden: true
+      - source: day_of_week
+        name: Day of Week
+        hidden: true
+      - source: month_name
+        name: Month
+        sort_by: Month Number
+
+relationships:
+  - from_table: Sales
+    from_column: product_sk
+    to_table: Product
+    to_column: product_sk
+    cardinality: many_to_one
+    cross_filter: single
+
+  - from_table: Sales
+    from_column: reseller_sk
+    to_table: Reseller
+    to_column: reseller_sk
+    cardinality: many_to_one
+    cross_filter: single
+
+  - from_table: Sales
+    from_column: salesperson_sk
+    to_table: Salesperson
+    to_column: salesperson_sk
+    cardinality: many_to_one
+    cross_filter: single
+
+  - from_table: Sales
+    from_column: region_sk
+    to_table: Territory
+    to_column: region_sk
+    cardinality: many_to_one
+    cross_filter: single
+
+  - from_table: Sales
+    from_column: order_date_sk
+    to_table: Date
+    to_column: date_sk
+    cardinality: many_to_one
+    cross_filter: single
+
+hierarchies:
+  - name: Calendar
+    table: Date
+    levels: [Year, "Quarter Number", Month]
+
+measures:
+  - name: Total Orders
+    table: Sales
+    expression: DISTINCTCOUNT(Sales[Order Number])
+    format: "#,0"
+    display_folder: "Sales Metrics"
+    description: >-
+      Count of distinct sales orders.
+
+  - name: Total Quantity
+    table: Sales
+    expression: SUM(Sales[Line Quantity])
+    format: "#,0"
+    display_folder: "Sales Metrics"
+    description: >-
+      Total units sold across all orders.
+
+  - name: Total Revenue
+    table: Sales
+    expression: SUM(Sales[Line Revenue])
+    format: "$#,0"
+    display_folder: "Sales Metrics"
+    description: >-
+      Gross sales revenue (unit price × quantity) before cost deduction.
+
+  - name: Total Cost
+    table: Sales
+    expression: SUM(Sales[Line Cost])
+    format: "$#,0"
+    display_folder: "Sales Metrics"
+    description: >-
+      Cost of goods sold across all orders.
+
+  - name: Gross Profit
+    table: Sales
+    expression: SUM(Sales[Line Gross Profit])
+    format: "$#,0"
+    display_folder: "Profitability"
+    description: >-
+      Revenue minus cost; measures profitability before operating expenses.
+
+  - name: Gross Margin %
+    table: Sales
+    expression: DIVIDE(SUM(Sales[Line Gross Profit]), SUM(Sales[Line Revenue]), 0)
+    format: "0.00%"
+    display_folder: "Profitability"
+    description: >-
+      Gross profit as a percentage of revenue; indicates unit-level efficiency.
+
+  - name: Avg Unit Price
+    table: Sales
+    expression: DIVIDE(SUM(Sales[Line Revenue]), SUM(Sales[Line Quantity]), 0)
+    format: "$#,0.00"
+    display_folder: "Pricing"
+    description: >-
+      Average selling price per unit; non-additive across hierarchies.
+
+# Row-level security can be added later with a salesperson-to-territory mapping
+# For now, the model supports all users seeing complete data
+roles: []

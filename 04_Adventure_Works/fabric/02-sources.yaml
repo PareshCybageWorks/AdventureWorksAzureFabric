@@ -1,0 +1,139 @@
+# =============================================================================
+# fabric/02-sources.yaml -- Stage F2  [FILLED]
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: SourceRegistry
+
+metadata:
+  name: adventure-works-04
+  description: Adventure Works sales data - products, resellers, territories, employees, and orders
+  scaffolding_ref: 01-scaffolding.yaml
+
+sources:
+  - name: adventure_works
+    description: Microsoft Adventure Works sample dataset - orders, products, resellers, territories, and sales staff
+    domain: sales
+    system_type: file_drop
+    owner: Sales Analytics Team
+
+    connection:
+      kind: file
+      format: csv
+      location_dev: "./data/archive"
+      location: "abfss://${LANDING_CONTAINER}@${LANDING_ACCOUNT}.dfs.core.windows.net/adventure-works/raw"
+      options:
+        header: true
+        delimiter: ","
+        encoding: utf-8
+        quote: '"'
+        infer_schema: false
+
+    sla:
+      delivery_by: "02:00 UTC"
+      freshness_hours: 24
+
+    entities:
+      - name: product
+        description: Product catalog with SKU, cost, and category
+        file_pattern: "Product.csv"
+        primary_key: [product_key]
+        load_pattern: full
+        expected_row_order: 500
+        columns:
+          - { name: product_key,          type: integer,  nullable: false, description: "Surrogate key" }
+          - { name: product,              type: string,   nullable: false, description: "Product name" }
+          - { name: standard_cost,        type: decimal,  nullable: false, precision: 18, scale: 2, description: "Product cost" }
+          - { name: color,                type: string,   nullable: true,  description: "Product color" }
+          - { name: subcategory,          type: string,   nullable: false, description: "Product subcategory" }
+          - { name: category,             type: string,   nullable: false, description: "Product category" }
+          - { name: background_color_format, type: string, nullable: true, description: "Formatting attribute" }
+          - { name: font_color_format,    type: string,   nullable: true, description: "Formatting attribute" }
+
+      - name: sales
+        description: Fact table of sales orders - one row per line item
+        file_pattern: "Sales.csv"
+        primary_key: [sales_order_number]
+        load_pattern: full
+        expected_row_order: 60000
+        foreign_keys:
+          - { columns: [product_key], references: "adventure_works.product", references_columns: [product_key] }
+          - { columns: [reseller_key], references: "adventure_works.reseller", references_columns: [reseller_key] }
+          - { columns: [employee_key], references: "adventure_works.salesperson", references_columns: [employee_key] }
+          - { columns: [sales_territory_key], references: "adventure_works.region", references_columns: [sales_territory_key] }
+        columns:
+          - { name: sales_order_number,   type: string,   nullable: false, description: "Order identifier" }
+          - { name: order_date,           type: date,     nullable: false, description: "Order date" }
+          - { name: product_key,          type: integer,  nullable: false, description: "Product reference" }
+          - { name: reseller_key,         type: integer,  nullable: false, description: "Reseller reference" }
+          - { name: employee_key,         type: integer,  nullable: false, description: "Salesperson reference" }
+          - { name: sales_territory_key,  type: integer,  nullable: false, description: "Territory reference" }
+          - { name: quantity,             type: integer,  nullable: false, description: "Units sold" }
+          - { name: unit_price,           type: decimal,  nullable: false, precision: 18, scale: 2, description: "Price per unit" }
+          - { name: sales,                type: decimal,  nullable: false, precision: 18, scale: 2, description: "Line revenue" }
+          - { name: cost,                 type: decimal,  nullable: false, precision: 18, scale: 2, description: "Line cost" }
+
+      - name: reseller
+        description: B2B reseller (distributor) directory
+        file_pattern: "Reseller.csv"
+        primary_key: [reseller_key]
+        load_pattern: full
+        expected_row_order: 500
+        columns:
+          - { name: reseller_key,         type: integer,  nullable: false, description: "Surrogate key" }
+          - { name: business_type,        type: string,   nullable: false, description: "Reseller business classification" }
+          - { name: reseller,             type: string,   nullable: false, description: "Reseller name" }
+          - { name: city,                 type: string,   nullable: true,  description: "Reseller city" }
+          - { name: state_province,       type: string,   nullable: true,  description: "Reseller state/province" }
+          - { name: country_region,       type: string,   nullable: true,  description: "Reseller country/region" }
+
+      - name: region
+        description: Sales territory definitions
+        file_pattern: "Region.csv"
+        primary_key: [sales_territory_key]
+        load_pattern: full
+        expected_row_order: 10
+        columns:
+          - { name: sales_territory_key,  type: integer,  nullable: false, description: "Territory key" }
+          - { name: region,               type: string,   nullable: false, description: "Territory name" }
+          - { name: country,              type: string,   nullable: false, description: "Territory country" }
+          - { name: group,                type: string,   nullable: false, description: "Territory group" }
+
+      - name: salesperson
+        description: Sales employee directory
+        file_pattern: "Salesperson.csv"
+        primary_key: [employee_key]
+        load_pattern: full
+        expected_row_order: 100
+        columns:
+          - { name: employee_key,         type: integer,  nullable: false, description: "Surrogate key" }
+          - { name: employee_id,          type: integer,  nullable: false, description: "Business employee ID" }
+          - { name: salesperson,          type: string,   nullable: false, description: "Employee name" }
+          - { name: title,                type: string,   nullable: true,  description: "Job title" }
+          - { name: upn,                  type: string,   nullable: true,  description: "User principal name" }
+
+      - name: salesperson_region
+        description: Mapping of salespeople to their territory assignments
+        file_pattern: "SalespersonRegion.csv"
+        primary_key: [employee_key, sales_territory_key]
+        load_pattern: full
+        expected_row_order: 100
+        foreign_keys:
+          - { columns: [employee_key], references: "adventure_works.salesperson", references_columns: [employee_key] }
+          - { columns: [sales_territory_key], references: "adventure_works.region", references_columns: [sales_territory_key] }
+        columns:
+          - { name: employee_key,         type: integer,  nullable: false, description: "Salesperson reference" }
+          - { name: sales_territory_key,  type: integer,  nullable: false, description: "Territory reference" }
+
+      - name: targets
+        description: Sales targets by employee and month
+        file_pattern: "Targets.csv"
+        primary_key: [employee_id, target_month]
+        load_pattern: full
+        expected_row_order: 1000
+        columns:
+          - { name: employee_id,          type: integer,  nullable: false, description: "Employee business ID" }
+          - { name: target,               type: decimal,  nullable: false, precision: 18, scale: 2, description: "Revenue target" }
+          - { name: target_month,         type: date,     nullable: false, description: "Month the target applies to" }
+
+known_issues: []

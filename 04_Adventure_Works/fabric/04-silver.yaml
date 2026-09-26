@@ -1,0 +1,204 @@
+# =============================================================================
+# fabric/04-silver.yaml -- Stage F4  [FILLED]
+# =============================================================================
+# Cleansed STAGING (stg_*), not a dimensional model. Nothing is dropped
+# silently: count(bronze) == count(silver) + count(quarantine).
+#
+# Procedure: framework/prompts/fabric/04-silver.md
+# Contract : framework/contracts/fabric/04-silver.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: silver
+  domain: sales
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  write_mode: overwrite
+  format: delta
+  scd: type1
+  quarantine:
+    enabled: true
+    table_suffix: _quarantine
+    retain_days: 90
+    write_mode: overwrite
+    columns: [_rejected_by, _rejected_at, _load_id]
+
+tables:
+  - target: stg_product
+    source: bronze_adventure_works_product
+    description: Product catalog cleansed and deduplicated
+    load_pattern: full_refresh
+    business_key: [product_key]
+    depends_on: []
+    columns:
+      - { source: product_key, target: product_key, type: integer, nullable: false, key: business }
+      - { source: product, target: product, type: string, nullable: false }
+      - { source: standard_cost, target: standard_cost, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: color, target: color, type: string, nullable: true }
+      - { source: subcategory, target: subcategory, type: string, nullable: false }
+      - { source: category, target: category, type: string, nullable: false }
+      - { source: background_color_format, target: background_color_format, type: string, nullable: true }
+      - { source: font_color_format, target: font_color_format, type: string, nullable: true }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [product_key], keep: first }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+  - target: stg_region
+    source: bronze_adventure_works_region
+    description: Sales territory definitions cleansed
+    load_pattern: full_refresh
+    business_key: [sales_territory_key]
+    depends_on: []
+    columns:
+      - { source: sales_territory_key, target: sales_territory_key, type: integer, nullable: false, key: business }
+      - { source: region, target: region, type: string, nullable: false }
+      - { source: country, target: country, type: string, nullable: false }
+      - { source: group, target: group, type: string, nullable: false }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [sales_territory_key], keep: first }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+  - target: stg_reseller
+    source: bronze_adventure_works_reseller
+    description: B2B reseller directory cleansed
+    load_pattern: full_refresh
+    business_key: [reseller_key]
+    depends_on: []
+    columns:
+      - { source: reseller_key, target: reseller_key, type: integer, nullable: false, key: business }
+      - { source: business_type, target: business_type, type: string, nullable: false }
+      - { source: reseller, target: reseller, type: string, nullable: false }
+      - { source: city, target: city, type: string, nullable: true }
+      - { source: state_province, target: state_province, type: string, nullable: true }
+      - { source: country_region, target: country_region, type: string, nullable: true }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [reseller_key], keep: first }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+  - target: stg_salesperson
+    source: bronze_adventure_works_salesperson
+    description: Sales employee directory cleansed
+    load_pattern: full_refresh
+    business_key: [employee_key]
+    depends_on: []
+    columns:
+      - { source: employee_key, target: employee_key, type: integer, nullable: false, key: business }
+      - { source: employee_id, target: employee_id, type: integer, nullable: false }
+      - { source: salesperson, target: salesperson, type: string, nullable: false }
+      - { source: title, target: title, type: string, nullable: true }
+      - { source: upn, target: upn, type: string, nullable: true }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [employee_key], keep: first }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+  - target: stg_salesperson_region
+    source: bronze_adventure_works_salesperson_region
+    description: Salesperson-to-territory assignments cleansed
+    load_pattern: full_refresh
+    business_key: [employee_key, sales_territory_key]
+    depends_on: [stg_salesperson, stg_region]
+    columns:
+      - { source: employee_key, target: employee_key, type: integer, nullable: false, key: business }
+      - { source: sales_territory_key, target: sales_territory_key, type: integer, nullable: false, key: business }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [employee_key, sales_territory_key], keep: first }
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: employee_key, references: "stg_salesperson.employee_key" }
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: sales_territory_key, references: "stg_region.sales_territory_key" }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+  - target: stg_targets
+    source: bronze_adventure_works_targets
+    description: Sales targets by employee and month cleansed
+    load_pattern: full_refresh
+    business_key: [employee_id, target_month]
+    depends_on: [stg_salesperson]
+    columns:
+      - { source: employee_id, target: employee_id, type: integer, nullable: false, key: business }
+      - { source: target, target: target, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: target_month, target: target_month, type: date, nullable: false, key: business }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [employee_id, target_month], keep: first }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+  - target: stg_sales
+    source: bronze_adventure_works_sales
+    description: Sales orders cleansed and deduplicated
+    load_pattern: full_refresh
+    business_key: [sales_order_number]
+    depends_on: [stg_product, stg_reseller, stg_salesperson, stg_region]
+    columns:
+      - { source: sales_order_number, target: sales_order_number, type: string, nullable: false, key: business }
+      - { source: order_date, target: order_date, type: date, nullable: false }
+      - { source: product_key, target: product_key, type: integer, nullable: false }
+      - { source: reseller_key, target: reseller_key, type: integer, nullable: false }
+      - { source: employee_key, target: employee_key, type: integer, nullable: false }
+      - { source: sales_territory_key, target: sales_territory_key, type: integer, nullable: false }
+      - { source: quantity, target: quantity, type: integer, nullable: false }
+      - { source: unit_price, target: unit_price, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: sales, target: sales, type: decimal, nullable: false, precision: 18, scale: 2 }
+      - { source: cost, target: cost, type: decimal, nullable: false, precision: 18, scale: 2 }
+    rules:
+      - fn: cast_types
+      - fn: apply_transforms
+      - fn: deduplicate
+        params: { keys: [sales_order_number], keep: first }
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: product_key, references: "stg_product.product_key" }
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: reseller_key, references: "stg_reseller.reseller_key" }
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: employee_key, references: "stg_salesperson.employee_key" }
+        on_reject: quarantine
+      - fn: enforce_referential_integrity
+        params: { column: sales_territory_key, references: "stg_region.sales_territory_key" }
+        on_reject: quarantine
+      - fn: add_record_hash
+        params: { exclude: [_processed_at, _load_id] }
+
+reconciliation:
+  - id: SILVER-RECON-003
+    description: Every bronze row is accounted for -- kept or quarantined.
+    assertion: "count(bronze) == count(silver) + count(quarantine)"
+    on_failure: fail

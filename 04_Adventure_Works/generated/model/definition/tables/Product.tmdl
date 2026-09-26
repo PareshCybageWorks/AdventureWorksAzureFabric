@@ -1,0 +1,48 @@
+/// Product catalog with category and cost.
+table Product
+	lineageTag: 58982eef-e956-54a9-a749-f3c4cb43356b
+
+	column 'Product ID'
+		dataType: int64
+		sourceColumn: product_key
+		summarizeBy: none
+		lineageTag: e2afae59-074a-562f-95e8-b41437edf8aa
+
+	column 'Product Name'
+		dataType: string
+		sourceColumn: product_name
+		summarizeBy: none
+		lineageTag: f252a95b-f48e-5917-843f-5c6ed08d4200
+
+	column Category
+		dataType: string
+		sourceColumn: category
+		summarizeBy: none
+		lineageTag: d5e550e1-d81b-59cc-9684-9a468bc8588b
+
+	column Subcategory
+		dataType: string
+		sourceColumn: subcategory
+		summarizeBy: none
+		lineageTag: c1013914-ecc1-5506-8bd2-0b01114d265a
+
+	column 'Standard Cost'
+		dataType: decimal
+		sourceColumn: standard_cost
+		summarizeBy: none
+		formatString: $#,0.00
+		lineageTag: 1e343e76-b149-586a-a623-bc53e84aab30
+
+	column product_sk
+		dataType: int64
+		isHidden
+		sourceColumn: product_sk
+		summarizeBy: none
+		lineageTag: 691bea89-77a4-5d29-ae3b-8f5df081d660
+
+	partition Product = entity
+		mode: directLake
+		source
+			entityName: dim_product
+			schemaName: dbo
+			expressionSource: DatabaseQuery

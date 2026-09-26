@@ -1,0 +1,128 @@
+version: 1
+
+# =============================================================================
+# C1 CI/CD -- Adventure Works
+# =============================================================================
+
+metadata:
+  name: 04_adventure_works
+
+deployment_pipeline:
+  name: dp-adventure-works
+  stages:
+    - name: Development
+      environment: dev
+    - name: UAT
+      environment: uat
+      requires_approval: true
+    - name: Production
+      environment: prod
+      requires_approval: true
+  items: [Lakehouse, Warehouse, Notebook, DataPipeline, Environment, SemanticModel, Report]
+  excluded_items: [dq_run_log, audit_trail, schema_migrations]
+
+parameterisation:
+  strategy: placeholders
+  on_missing_parameter: fail
+
+warehouse_migrations:
+  path: ./generated/migrations
+  strategy: forward_only
+  history_table: dbo.schema_migrations
+  on_drift:
+    action: fail
+
+workflows:
+  - name: ci-validate
+    file: .github/workflows/ci-validate.yml
+    description: Runs on every pull request. Validates specs and generates code.
+    triggers:
+      pull_request:
+        branches: [dev, main]
+      workflow_dispatch: {}
+    jobs:
+      - id: validate
+        description: Validate all spec files
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 04_Adventure_Works
+      - id: unit-tests
+        description: Run unit tests on generated code
+        steps:
+          - python AzureFabricMCP/framework/tests/test_monitoring.py --project 04_Adventure_Works
+      - id: no-drift
+        description: Verify generated code matches specs
+        steps:
+          - python AzureFabricMCP/framework/generators/generate_notebooks.py --specs 04_Adventure_Works --out 04_Adventure_Works/generated/notebooks
+          - python AzureFabricMCP/framework/generators/generate_tmdl.py --specs 04_Adventure_Works --out 04_Adventure_Works/generated/model
+
+  - name: cd-deploy-dev
+    file: .github/workflows/cd-deploy-dev.yml
+    description: Deploys to dev on every merge to dev branch
+    triggers:
+      push:
+        branches: [dev]
+    jobs:
+      - id: deploy
+        description: Deploy to dev environment
+        steps:
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 04_Adventure_Works --env dev
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 04_Adventure_Works --env dev
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 04_Adventure_Works --env dev
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 04_Adventure_Works --env dev
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 04_Adventure_Works --env dev
+
+  - name: cd-deploy-uat
+    file: .github/workflows/cd-deploy-uat.yml
+    description: Promotes from dev to uat on release tag
+    triggers:
+      push:
+        tags: [release-*]
+    jobs:
+      - id: deploy
+        description: Deploy to uat environment
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 04_Adventure_Works --strict
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 04_Adventure_Works --env uat
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 04_Adventure_Works --env uat
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 04_Adventure_Works --env uat
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 04_Adventure_Works --env uat
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 04_Adventure_Works --env uat
+
+  - name: cd-deploy-prod
+    file: .github/workflows/cd-deploy-prod.yml
+    description: Promotes from uat to prod on release tag approval
+    triggers:
+      workflow_dispatch:
+        inputs:
+          environment: [prod]
+    jobs:
+      - id: deploy
+        description: Deploy to prod environment
+        steps:
+          - python AzureFabricMCP/framework/generators/validate.py --project 04_Adventure_Works --strict
+          - python AzureFabricMCP/framework/deploy/push_library.py --project 04_Adventure_Works --env prod
+          - python AzureFabricMCP/framework/deploy/push_items.py --project 04_Adventure_Works --env prod
+          - python AzureFabricMCP/framework/deploy/run_migrations.py --project 04_Adventure_Works --env prod
+          - python AzureFabricMCP/framework/deploy/push_semantic_model.py --project 04_Adventure_Works --env prod
+          - python AzureFabricMCP/framework/deploy/push_reports.py --project 04_Adventure_Works --env prod
+
+  - name: dryrun-test
+    file: .github/workflows/dryrun-test.yml
+    description: Weekly dryrun test against sample data
+    triggers:
+      schedule:
+        - cron: "0 1 * * 0"
+      workflow_dispatch: {}
+    jobs:
+      - id: test
+        description: Run dryrun validation
+        steps:
+          - python AzureFabricMCP/framework/tools/dryrun.py --project 04_Adventure_Works
+
+notifications:
+  slack:
+    webhook_secret: SLACK_WEBHOOK_URL
+    on_events: [workflow_failure, manual_gate_required]
+  email:
+    on_events: [workflow_failure, manual_gate_required]
+    recipients: [sales-analytics-team@company.com]

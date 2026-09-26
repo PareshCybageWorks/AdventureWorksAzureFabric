@@ -1,0 +1,88 @@
+# =============================================================================
+# fabric/03-bronze.yaml -- Stage F3  [FILLED]
+# =============================================================================
+# Landing only. Do not transform: every defect declared in F2 must survive
+# intact, or a silver bug becomes indistinguishable from an upstream change and
+# a replay will not reproduce the original state.
+#
+# Procedure: framework/prompts/fabric/03-bronze.md
+# Contract : framework/contracts/fabric/03-bronze.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: bronze
+  domain: sales
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  source_system: adventure_works
+  write_mode: append
+  format: delta
+  partition_by: [ingest_date]
+  schema_evolution: additive_only
+  on_schema_drift: fail
+
+tables:
+  - target: bronze_adventure_works_product
+    source_entity: "adventure_works.product"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+  - target: bronze_adventure_works_sales
+    source_entity: "adventure_works.sales"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+  - target: bronze_adventure_works_reseller
+    source_entity: "adventure_works.reseller"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+  - target: bronze_adventure_works_region
+    source_entity: "adventure_works.region"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+  - target: bronze_adventure_works_salesperson
+    source_entity: "adventure_works.salesperson"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+  - target: bronze_adventure_works_salesperson_region
+    source_entity: "adventure_works.salesperson_region"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+  - target: bronze_adventure_works_targets
+    source_entity: "adventure_works.targets"
+    load_pattern: full
+    columns: passthrough
+    excluded_columns: []
+
+landing_checks:
+  - id: header_matches_registry
+    description: >-
+      Column names AND order match 02-sources. The header must be read
+      separately, without the declared schema -- reading it from the loaded
+      frame returns the schema's own names, so the check compares the schema to
+      itself and can never fail.
+    on_failure: fail
+  - id: row_count_not_zero
+    description: A zero-row file almost always means a broken export.
+    on_failure: fail
+  - id: row_count_within_order_of_magnitude
+    description: Catches a truncated or duplicated export.
+    on_failure: warn
+  - id: encoding_readable
+    description: Parses with the declared delimiter and quoting.
+    on_failure: fail

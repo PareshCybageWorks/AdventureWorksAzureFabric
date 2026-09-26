@@ -1,0 +1,23 @@
+# generated/ is deliberately NOT ignored.
+#
+# The no-drift CI gate re-runs every generator with --check and compares against
+# what is committed. With nothing to compare against, the gate cannot fail --
+# which is worse than not having it. The deploy scripts also read from here.
+
+__pycache__/
+*.pyc
+
+# .config/ holds this project's secrets.
+#
+# Ignore the whole directory rather than listing filenames. A denylist misses
+# the file nobody anticipated -- .env.local, .env.prod, creds.json, a pasted
+# token in notes.txt -- and it only has to miss once. The two files that ARE
+# safe to commit are re-included explicitly below.
+.config/*
+!.config/.env.example
+!.config/README.md
+
+# Belt and braces: a .env anywhere in the project, not only under .config/.
+.env
+.env.*
+!.env.example

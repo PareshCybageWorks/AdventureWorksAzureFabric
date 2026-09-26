@@ -1,0 +1,30 @@
+# Projects are numbered folders, and each lives in its own repository. They are
+# cloned here side by side for local work, so they are ignored rather than
+# absent -- this repo must not carry another project's data.
+#
+# The rule is by PATTERN so a new project does not have to be added by hand,
+# and new ones do not sit in `git status` as untracked noise.
+#
+# THE EXCEPTION IS LOAD-BEARING. 04_Adventure_Works is this repository's own
+# project -- it is tracked, and it is the reason the repo exists. Without the
+# negation below, a blanket numbered-folder rule would ignore the very content
+# this repo is for, and the next `git add -A` after a re-clone would quietly
+# leave it out while everything still looked correct on disk.
+[0-9][0-9]_*/
+!04_Adventure_Works/
+
+__pycache__/
+*.pyc
+.env
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Presentation material that is not framework code. Untracking alone does not
+# stick -- a blanket `git add -A` re-adds it, which is how it landed twice.
+#
+# Scoped to the FILE, never the directory: AzureFabricMCP/ now holds the whole
+# framework, and ignoring it wholesale would drop the framework from the repo
+# on the next commit while everything still looked fine on disk.
+/AzureFabricMCP/Quiz_AI_Master_Orchestrator.md

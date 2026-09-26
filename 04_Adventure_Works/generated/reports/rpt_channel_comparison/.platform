@@ -1,0 +1,12 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Channel Comparison",
+    "description": "B2C vs B2B channel and reseller analysis."
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "f7d95e5c-6998-5a80-8161-dc120fbbdf6b"
+  }
+}

@@ -1,0 +1,10 @@
+/// Connection to the gold layer. The endpoint is environment-specific
+/// and is substituted at deploy time by push_semantic_model.py.
+expression DatabaseQuery =
+		let
+		    database = Sql.Database("@@sqlendpoint@@", "@@database@@")
+		in
+		    database
+	lineageTag: cb5aa1af-58f2-5cde-b7c3-a07881a7a568
+	annotation PBI_IncludeFutureArtifacts = False
+	annotation PBI_NavigationStepName = Navigation

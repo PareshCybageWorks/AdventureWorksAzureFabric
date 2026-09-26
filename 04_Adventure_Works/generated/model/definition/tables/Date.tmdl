@@ -1,0 +1,75 @@
+/// Date dimension for time-based analysis.
+table Date
+	lineageTag: 39e0ad3e-41f4-57ba-b8c2-fc366ac9359f
+	dataCategory: Time
+
+	column Date
+		dataType: string
+		sourceColumn: full_date
+		summarizeBy: none
+		lineageTag: b70dd932-b0be-52c4-a2f0-6bba554e0e42
+		isKey
+
+	column Year
+		dataType: string
+		isHidden
+		sourceColumn: year
+		summarizeBy: none
+		lineageTag: f4686300-04fa-55de-8065-70054adff738
+
+	column 'Quarter Number'
+		dataType: string
+		isHidden
+		sourceColumn: quarter
+		summarizeBy: none
+		lineageTag: 42ba4e25-6538-5e90-be9d-34b2a8ecb8b1
+
+	column 'Month Number'
+		dataType: string
+		isHidden
+		sourceColumn: month
+		summarizeBy: none
+		lineageTag: 4a61ed1c-dab6-5fa3-a44e-49f2a1ec6766
+
+	column 'Day of Week'
+		dataType: string
+		isHidden
+		sourceColumn: day_of_week
+		summarizeBy: none
+		lineageTag: d2f3f61a-e444-52de-9c38-ae4d83f3d7ba
+
+	column Month
+		dataType: string
+		sourceColumn: month_name
+		summarizeBy: none
+		sortByColumn: 'Month Number'
+		lineageTag: 0960cb36-dc07-5da6-8338-f3069e371348
+
+	column date_sk
+		dataType: string
+		isHidden
+		sourceColumn: date_sk
+		summarizeBy: none
+		lineageTag: d22b53a7-9640-5312-955a-38744a775cda
+
+	hierarchy Calendar
+		lineageTag: 8328476d-38de-5820-8501-8cf9cd88e86d
+
+		level Year
+			lineageTag: 9665281d-8c40-58cc-a037-23892524b88a
+			column: Year
+
+		level 'Quarter Number'
+			lineageTag: d2f9d427-c1ce-56ef-85d6-3c95d583cdbc
+			column: 'Quarter Number'
+
+		level Month
+			lineageTag: c12cbe22-b0df-5ac4-ac2a-bc4acbc0f9d8
+			column: Month
+
+	partition Date = entity
+		mode: directLake
+		source
+			entityName: dim_date
+			schemaName: dbo
+			expressionSource: DatabaseQuery

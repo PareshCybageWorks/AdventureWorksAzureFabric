@@ -1,0 +1,23 @@
+/// Sales analytics model for Adventure Works, covering orders by product, reseller, territory, and salesperson. Supports sales leadership and regional managers analyzing B2C and B2B channel performance.
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	discourageImplicitMeasures
+	sourceQueryCulture: en-US
+
+annotation PBI_QueryOrder = ["DatabaseQuery"]
+
+ref table Sales
+ref table Product
+ref table Reseller
+ref table Territory
+ref table Salesperson
+ref table Date
+
+ref expression DatabaseQuery
+
+ref relationship ffe0daa2-b07f-5812-94b8-fae232672806
+ref relationship dff23401-f7e9-597f-b088-0fc33537376c
+ref relationship 81d968a4-1abf-579c-ac1b-b43eb7ca4557
+ref relationship 9e50a27e-e745-5aee-8e10-02fe18763da6
+ref relationship c6dcc690-439a-548c-a7dd-d8335652e7a2

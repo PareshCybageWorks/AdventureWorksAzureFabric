@@ -1,0 +1,121 @@
+version: 1
+
+# =============================================================================
+# D2 DataOps Audit -- Adventure Works
+# =============================================================================
+# Row and value flow audit trail from bronze through gold
+
+metadata:
+  name: 04_adventure_works
+  description: Audit trail for Adventure Works sales pipeline
+
+reports:
+  table: dbo.audit_trail
+  retain_days: 730
+
+audits:
+  # Sales order flow from bronze to gold
+  - subject: Sales Orders
+    description: Track order counts and revenue flow from bronze through silver to fact table
+    entities:
+      - name: bronze_adventure_works_sales
+        role: source
+        key: sales_order_number
+      - name: stg_sales
+        role: staging
+        key: sales_order_number
+      - name: fct_sales
+        role: fact
+        key: sales_order_number
+    assertions:
+      - metric: row_count
+        description: "Sales order row count progression"
+        bronze_column: sales_order_number
+        silver_column: sales_order_number
+        gold_column: sales_order_number
+      - metric: value_sum
+        description: "Revenue value flow from bronze to gold"
+        bronze_column: sales
+        silver_column: sales
+        gold_column: sales_revenue
+        tolerance_pct: 0.01
+
+  # Product dimension flow
+  - subject: Products
+    description: Track product records through dimensions
+    entities:
+      - name: bronze_adventure_works_product
+        role: source
+        key: product_key
+      - name: stg_product
+        role: staging
+        key: product_key
+      - name: dim_product
+        role: dimension
+        key: product_sk
+    assertions:
+      - metric: row_count
+        description: "Product row count progression"
+        bronze_column: product_key
+        silver_column: product_key
+        gold_column: product_key
+
+  # Reseller flow
+  - subject: Resellers
+    description: Track reseller records through dimensions
+    entities:
+      - name: bronze_adventure_works_reseller
+        role: source
+        key: reseller_key
+      - name: stg_reseller
+        role: staging
+        key: reseller_key
+      - name: dim_reseller
+        role: dimension
+        key: reseller_sk
+    assertions:
+      - metric: row_count
+        description: "Reseller row count progression"
+        bronze_column: reseller_key
+        silver_column: reseller_key
+        gold_column: reseller_key
+
+  # Region/Territory flow
+  - subject: Sales Territories
+    description: Track territory records through dimensions
+    entities:
+      - name: bronze_adventure_works_region
+        role: source
+        key: sales_territory_key
+      - name: stg_region
+        role: staging
+        key: sales_territory_key
+      - name: dim_region
+        role: dimension
+        key: sales_territory_key
+    assertions:
+      - metric: row_count
+        description: "Territory row count progression"
+        bronze_column: sales_territory_key
+        silver_column: sales_territory_key
+        gold_column: sales_territory_key
+
+  # Salesperson flow
+  - subject: Salespeople
+    description: Track salesperson records through dimensions
+    entities:
+      - name: bronze_adventure_works_salesperson
+        role: source
+        key: employee_key
+      - name: stg_salesperson
+        role: staging
+        key: employee_key
+      - name: dim_salesperson
+        role: dimension
+        key: employee_sk
+    assertions:
+      - metric: row_count
+        description: "Salesperson row count progression"
+        bronze_column: employee_key
+        silver_column: employee_key
+        gold_column: employee_key

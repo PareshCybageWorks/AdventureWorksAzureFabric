@@ -1,0 +1,119 @@
+# =============================================================================
+# fabric/05-gold.yaml -- Stage F5  [TEMPLATE]
+# =============================================================================
+# Star schema (dbo) and reporting views (bi). What Power BI connects to.
+#
+# Procedure: framework/prompts/fabric/05-gold.md
+# Contract : framework/contracts/fabric/05-gold.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: gold
+  domain: <domain>
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  target_item: warehouse
+  physical_schema: dbo
+  reporting_schema: bi
+  write_mode: overwrite        # the warehouse connector supports nothing else
+  format: delta
+
+dimensions:
+  - name: dim_<entity>
+    schema: dbo
+    source: silver.stg_<entity>
+    description: <what one row represents>
+    scd: type2
+    surrogate_key: <entity>_sk
+    business_key: [<natural_key>]
+    # Only these open a new version. A phone correction should not fabricate a
+    # historical event; a region move must, because it changes which territory
+    # the sales are attributed to.
+    scd2_tracked_columns: [<attribute>]
+    scd2_columns:
+      valid_from: valid_from
+      valid_to: valid_to
+      is_current: is_current
+      version: version
+
+    columns:
+      - { source: <src>, target: <tgt>, type: string, key: business }
+
+    business_rules:
+      - name: <band>
+        target: <band>
+        type: string
+        expression: "CASE WHEN <cond> THEN '<a>' ELSE '<b>' END"
+
+    unknown_member:
+      # Guarantees an unmatched fact still joins rather than vanishing from a
+      # report without trace. `defaults` must cover EVERY non-nullable column --
+      # a warehouse infers NOT NULL from the first write and rejects a member
+      # carrying nulls in columns the spec did not name.
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { <natural_key>: "UNKNOWN" }
+
+facts:
+  - name: fct_<subject>
+    schema: dbo
+    description: <what this fact measures>
+    grain: >-
+      <One row per WHAT. Stated in words and length-checked, because a fact
+      whose grain nobody wrote down is a fact somebody will double-count.>
+    source: silver.stg_<lines>
+
+    joins:
+      # `join_on`, not `on` -- a bare `on:` key parses as boolean true.
+      - { table: silver.stg_<header>, join_on: <key>, type: inner,
+          description: "<why inner is load-bearing here>" }
+
+    degenerate_dimensions:
+      - { source: <id>, target: <id>, type: string }
+
+    dimension_keys:
+      # FOUR names are involved and only two coincide in the easy case:
+      #   lookup_on   the fact's column
+      #   target      the column written on the fact
+      #   the dimension's own business key and surrogate key may differ again
+      - { dimension: dim_<entity>, target: <entity>_sk, lookup_on: <fact_col>,
+          scd2_as_of: <event_date> }
+
+    measures:
+      - { source: <amount>, target: <amount>, type: decimal, precision: 18, scale: 2,
+          aggregation: sum, additive: true }
+      - { source: <price>, target: <price>, type: decimal, precision: 18, scale: 2,
+          aggregation: avg, additive: false,
+          description: "Non-additive: averaging across rows is only valid weighted by quantity." }
+
+    business_rules:
+      - name: <rule>
+        target: <col>
+        type: decimal
+        precision: 18
+        scale: 2
+        expression: "<expression>"
+        # provisional: true    # set when standing in for data you do not have
+
+    tests:
+      - { id: GOLD-GRAIN-001, description: "The declared grain holds.",
+          assertion: "unique(<degenerate_id>)", on_failure: fail }
+      - { id: GOLD-FK-001, description: "Every dimension key resolves.",
+          assertion: "no_null(<keys>)", on_failure: fail }
+      - { id: GOLD-RECON-001, description: "Gold ties back to silver.",
+          assertion: "<expression>", on_failure: fail }
+
+views:
+  - name: vw_<purpose>
+    schema: bi
+    description: <what question this answers>
+    grain: <one row per ...>
+    sql: |
+      SELECT ...
+      FROM dbo.fct_<subject> f
+      JOIN dbo.dim_<entity> d ON f.<entity>_sk = d.<entity>_sk

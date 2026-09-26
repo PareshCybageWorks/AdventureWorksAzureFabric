@@ -1,0 +1,243 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://techtonic/contracts/dataops/01-monitoring.schema.json",
+  "title": "D1 DataOps Monitoring",
+  "description": "Expectations, SLAs and enforcement for the pipeline. Declares what 'healthy' means per table and what happens when it is not. AUTHORITATIVE: validation fails the build.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "results", "severity_levels", "enforcement", "expectations"],
+
+  "definitions": {
+    "share": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "A FRACTION, not a percentage. 0.022 means 2.2%. Capped at 1 because a threshold above 1.0 can never be exceeded, so the check would sit there looking healthy forever."
+    },
+    "severity": {
+      "enum": ["info", "warning", "error", "critical"],
+      "description": "Must be declared in severity_levels."
+    },
+    "reconciliation_side": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table", "expression"],
+      "description": "One side of a reconciliation. Both sides must agree on whether a key is used.",
+      "properties": {
+        "table": { "type": "string" },
+        "expression": {
+          "type": "string",
+          "description": "A Spark SQL AGGREGATE over that table, e.g. sum(subtotal)."
+        },
+        "key": {
+          "type": "string",
+          "description": "Column to group and join on. Present on both sides means a per-key comparison and the measure is the share of keys that disagree; absent on both means grand totals and the measure is the relative difference."
+        }
+      }
+    }
+  },
+
+  "properties": {
+    "version": { "const": 1 },
+
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "calibrated_from": {
+          "type": "string",
+          "description": "Where the thresholds came from. Thresholds without provenance get loosened whenever they fire."
+        }
+      }
+    },
+
+    "results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["table"],
+      "properties": {
+        "table": {
+          "type": "string",
+          "description": "Where check results are written. NOTE: every layer writes this unqualified, so it lands in each notebook's own default lakehouse rather than one place -- bi.vw_data_quality consolidates them at read time."
+        },
+        "retain_days": { "type": "integer", "minimum": 1 },
+        "schema": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "severity_levels": {
+      "type": "object",
+      "description": "What each severity means operationally. Defined once so a check only has to pick a level.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "blocks_promotion": { "type": "boolean" },
+          "alerts": { "type": "boolean" },
+          "description": { "type": "string" }
+        }
+      }
+    },
+
+    "enforcement": {
+      "type": "object",
+      "description": "Per environment. The same breach should not have the same consequence everywhere: blocking dev stops work, blocking prod stops the business.",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": {
+          "mode": {
+            "enum": ["warn", "block", "alert"],
+            "description": "warn: record only. block: fail the run. alert: notify without failing."
+          },
+          "block_on": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/severity" },
+            "description": "Severities that stop the run. Empty means nothing blocks -- deliberate for dev, worth a second look for prod."
+          }
+        }
+      }
+    },
+
+    "rule_catalogue": {
+      "type": "array",
+      "description": "Documentation of the available rules. The implementations live in ttfabric/monitoring.py; this describes them for a spec author.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "parameters": { "type": "array", "items": { "type": "string" } },
+          "measure": { "type": "string" }
+        }
+      }
+    },
+
+    "expectations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["table", "layer", "checks"],
+        "properties": {
+          "table": { "type": "string" },
+          "layer": { "enum": ["bronze", "silver", "gold"] },
+          "source": {
+            "type": "string",
+            "description": "Upstream table, used by checks with measured_on: input. Resolved from the layer specs by the generator when absent."
+          },
+          "expected_columns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "For schema_match. Resolved from the source registry by the generator when absent."
+          },
+          "checks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["id", "rule", "severity"],
+              "properties": {
+                "id": { "type": "string", "description": "Stable identifier; appears in the results table and in alerts." },
+                "rule": {
+                  "enum": ["not_null", "unique", "referential_integrity",
+                           "accepted_values", "range", "arithmetic_consistency",
+                           "reconciliation",
+                           "row_count_delta", "freshness", "schema_match"],
+                  "description": "Must have an evaluator in ttfabric/monitoring.py."
+                },
+                "severity": { "$ref": "#/definitions/severity" },
+                "measured_on": {
+                  "enum": ["input", "output"],
+                  "default": "output",
+                  "description": "input measures the upstream table. A rule calibrated against raw data is meaningless once cleansing has removed what it counted."
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Where the threshold came from. Strongly encouraged: an uncalibrated threshold gets loosened the first time it fires."
+                },
+
+                "warn_above": { "$ref": "#/definitions/share" },
+                "fail_above": { "$ref": "#/definitions/share" },
+
+                "column": { "type": "string" },
+                "columns": { "type": "array", "items": { "type": "string" } },
+                "filter": { "type": "string" },
+                "values": { "type": "array" },
+                "min": { "type": "number" },
+                "max": { "type": "number" },
+                "expression": { "type": "string" },
+                "tolerance": { "type": "number" },
+                "references": {
+                  "type": "string",
+                  "pattern": "^[^.]+\\.[^.]+$",
+                  "description": "table.column the foreign key must resolve against."
+                },
+                "registry_ref": { "type": "string" },
+                "expected_columns": { "type": "array", "items": { "type": "string" } },
+
+                "max_age_hours": { "type": "number", "exclusiveMinimum": 0 },
+                "max_increase_pct": { "type": "number", "description": "PERCENT, unlike the share thresholds. A source doubling is usually a duplicate load." },
+                "max_decrease_pct": { "type": "number", "description": "PERCENT. A source halving is usually a partial load." }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "slas": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["table"],
+        "properties": {
+          "table": { "type": "string" },
+          "freshness_hours": { "type": "number", "exclusiveMinimum": 0 },
+          "completeness_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+          "accuracy_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+          "availability_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+
+    "monitoring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "check_interval_minutes": { "type": "integer", "minimum": 1 },
+        "breach_tolerance": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Consecutive breaches before alerting. Above zero suppresses single-run noise; it also delays a real incident by that many intervals."
+        }
+      }
+    },
+
+    "masking": { "type": "object" },
+
+    "alerting": {
+      "type": "object",
+      "description": "Where breaches go. Destinations are references -- never literal webhooks or addresses. Prefer ${ENV}; keyvault:// is also supported.",
+      "properties": {
+        "channels": { "type": "array" },
+        "routes": { "type": "array" }
+      }
+    }
+  }
+}

@@ -1,0 +1,226 @@
+# =============================================================================
+# fabric/05-gold.yaml -- Stage F5  [FILLED]
+# =============================================================================
+# Star schema (dbo) and reporting views (bi). What Power BI connects to.
+#
+# Procedure: framework/prompts/fabric/05-gold.md
+# Contract : framework/contracts/fabric/05-gold.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: LayerMapping
+
+metadata:
+  layer: gold
+  domain: sales
+  scaffolding_ref: 01-scaffolding.yaml
+  sources_ref: 02-sources.yaml
+
+defaults:
+  target_item: warehouse
+  physical_schema: dbo
+  reporting_schema: bi
+  write_mode: overwrite
+  format: delta
+
+dimensions:
+  - name: dim_product
+    schema: dbo
+    source: silver.stg_product
+    description: "Product catalog with cost and category"
+    scd: type2
+    surrogate_key: product_sk
+    business_key: [product_key]
+    scd2_tracked_columns: [standard_cost, subcategory]
+    scd2_columns:
+      valid_from: valid_from
+      valid_to: valid_to
+      is_current: is_current
+      version: version
+    columns:
+      - { source: product_key, target: product_key, type: integer, key: business }
+      - { source: product, target: product_name, type: string }
+      - { source: standard_cost, target: standard_cost, type: decimal, precision: 18, scale: 2 }
+      - { source: color, target: color, type: string }
+      - { source: subcategory, target: subcategory, type: string }
+      - { source: category, target: category, type: string }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { product_key: -1, product_name: "Unknown Product", category: "Unknown" }
+
+  - name: dim_reseller
+    schema: dbo
+    source: silver.stg_reseller
+    description: "B2B reseller (distributor) directory"
+    scd: type2
+    surrogate_key: reseller_sk
+    business_key: [reseller_key]
+    scd2_tracked_columns: [business_type, state_province]
+    scd2_columns:
+      valid_from: valid_from
+      valid_to: valid_to
+      is_current: is_current
+      version: version
+    columns:
+      - { source: reseller_key, target: reseller_key, type: integer, key: business }
+      - { source: reseller, target: reseller_name, type: string }
+      - { source: business_type, target: business_type, type: string }
+      - { source: city, target: city, type: string }
+      - { source: state_province, target: state_province, type: string }
+      - { source: country_region, target: country_region, type: string }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { reseller_key: -1, reseller_name: "Unknown Reseller", business_type: "Unknown" }
+
+  - name: dim_region
+    schema: dbo
+    source: silver.stg_region
+    description: "Sales territory definitions"
+    scd: type1
+    surrogate_key: region_sk
+    business_key: [sales_territory_key]
+    columns:
+      - { source: sales_territory_key, target: sales_territory_key, type: integer, key: business }
+      - { source: region, target: region_name, type: string }
+      - { source: country, target: country, type: string }
+      - { source: group, target: region_group, type: string }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { sales_territory_key: -1, region_name: "Unknown Territory", region_group: "Unknown" }
+
+  - name: dim_salesperson
+    schema: dbo
+    source: silver.stg_salesperson
+    description: "Sales employee directory"
+    scd: type2
+    surrogate_key: salesperson_sk
+    business_key: [employee_key]
+    scd2_tracked_columns: [title]
+    scd2_columns:
+      valid_from: valid_from
+      valid_to: valid_to
+      is_current: is_current
+      version: version
+    columns:
+      - { source: employee_key, target: employee_key, type: integer, key: business }
+      - { source: employee_id, target: employee_id, type: integer }
+      - { source: salesperson, target: salesperson_name, type: string }
+      - { source: title, target: title, type: string }
+    unknown_member:
+      enabled: true
+      surrogate_key_value: -1
+      defaults: { employee_key: -1, salesperson_name: "Unknown Salesperson", employee_id: -1 }
+
+facts:
+  - name: fct_sales
+    schema: dbo
+    description: "Sales orders with revenue and cost by product, territory, and salesperson"
+    grain: "One row per unique sales_order_number representing a single order placed by a reseller, with product ordered, quantity, unit price, total revenue and cost"
+    source: silver.stg_sales
+
+    joins:
+      - { table: silver.stg_product, join_on: product_key, type: inner,
+          on_unmatched: quarantine, quarantine_table: "dbo.fct_sales_unmatched_product" }
+      - { table: silver.stg_reseller, join_on: reseller_key, type: inner,
+          on_unmatched: quarantine, quarantine_table: "dbo.fct_sales_unmatched_reseller" }
+      - { table: silver.stg_salesperson, join_on: employee_key, type: inner,
+          on_unmatched: quarantine, quarantine_table: "dbo.fct_sales_unmatched_salesperson" }
+      - { table: silver.stg_region, join_on: sales_territory_key, type: inner,
+          on_unmatched: quarantine, quarantine_table: "dbo.fct_sales_unmatched_region" }
+
+    degenerate_dimensions:
+      - { source: sales_order_number, target: sales_order_number, type: string }
+      - { source: order_date, target: order_date, type: date }
+
+    dimension_keys:
+      - { dimension: dim_product, target: product_sk, lookup_on: product_key }
+      - { dimension: dim_reseller, target: reseller_sk, lookup_on: reseller_key }
+      - { dimension: dim_salesperson, target: salesperson_sk, lookup_on: employee_key }
+      - { dimension: dim_region, target: region_sk, lookup_on: sales_territory_key }
+
+    measures:
+      - { source: quantity, target: quantity, type: integer, aggregation: sum, additive: true }
+      - { source: unit_price, target: unit_price, type: decimal, precision: 18, scale: 2,
+          aggregation: avg, additive: false }
+      - { source: sales, target: sales_revenue, type: decimal, precision: 18, scale: 2,
+          aggregation: sum, additive: true }
+      - { source: cost, target: sales_cost, type: decimal, precision: 18, scale: 2,
+          aggregation: sum, additive: true }
+
+    business_rules:
+      - name: gross_profit
+        target: gross_profit
+        type: decimal
+        precision: 18
+        scale: 2
+        expression: "sales_revenue - sales_cost"
+      - name: gross_margin_pct
+        target: gross_margin_pct
+        type: decimal
+        precision: 18
+        scale: 4
+        expression: "CASE WHEN sales_revenue = 0 THEN 0 ELSE (sales_revenue - sales_cost) / sales_revenue END"
+
+    tests:
+      - { id: GOLD-GRAIN-001, description: "One row per sales order",
+          assertion: "unique(sales_order_number)", on_failure: fail }
+
+views:
+  - name: vw_sales_summary
+    schema: bi
+    description: "Overall sales performance by channel and region"
+    grain: "One row per region and salesperson and product"
+    sql: |
+      SELECT
+        r.region_name,
+        s.salesperson_name,
+        p.product_name,
+        COUNT(DISTINCT f.sales_order_number) as order_count,
+        SUM(f.quantity) as total_quantity,
+        SUM(f.sales_revenue) as total_revenue,
+        SUM(f.sales_cost) as total_cost,
+        SUM(f.gross_profit) as total_profit
+      FROM dbo.fct_sales f
+      JOIN dbo.dim_region r ON f.region_sk = r.region_sk
+      JOIN dbo.dim_salesperson s ON f.salesperson_sk = s.salesperson_sk
+      JOIN dbo.dim_product p ON f.product_sk = p.product_sk
+      GROUP BY r.region_name, s.salesperson_name, p.product_name
+
+  - name: vw_product_performance
+    schema: bi
+    description: "Product sales and profitability by category"
+    grain: "One row per product"
+    sql: |
+      SELECT
+        p.product_name,
+        p.category,
+        p.subcategory,
+        COUNT(DISTINCT f.sales_order_number) as order_count,
+        SUM(f.quantity) as units_sold,
+        SUM(f.sales_revenue) as total_revenue,
+        SUM(f.sales_cost) as total_cost,
+        SUM(f.gross_profit) as total_profit
+      FROM dbo.fct_sales f
+      JOIN dbo.dim_product p ON f.product_sk = p.product_sk
+      GROUP BY p.product_name, p.category, p.subcategory
+
+  - name: vw_channel_comparison
+    schema: bi
+    description: "B2B reseller vs direct channel comparison"
+    grain: "One row per reseller type and region"
+    sql: |
+      SELECT
+        re.business_type as channel,
+        r.region_name,
+        COUNT(DISTINCT f.sales_order_number) as order_count,
+        SUM(f.quantity) as units_sold,
+        SUM(f.sales_revenue) as revenue,
+        SUM(f.sales_cost) as cost,
+        SUM(f.gross_profit) as profit
+      FROM dbo.fct_sales f
+      JOIN dbo.dim_reseller re ON f.reseller_sk = re.reseller_sk
+      JOIN dbo.dim_region r ON f.region_sk = r.region_sk
+      GROUP BY re.business_type, r.region_name

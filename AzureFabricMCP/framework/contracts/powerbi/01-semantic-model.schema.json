@@ -1,0 +1,372 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://techtonic/contracts/powerbi/01-semantic-model.schema.json",
+  "title": "P1 Semantic Model",
+  "description": "The tabular model Power BI reports bind to. Declares which gold tables become model tables, how they relate, and the measures that carry the business definitions. AUTHORITATIVE: validation fails the build.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "model",
+    "tables",
+    "relationships"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "storage_mode",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^sm_[a-z0-9_]+$",
+          "description": "sm_ prefix keeps the semantic model distinguishable from the lakehouse, warehouse and report items that share a workspace."
+        },
+        "description": {
+          "type": "string"
+        },
+        "culture": {
+          "type": "string",
+          "default": "en-US",
+          "description": "Drives date and number formatting. Set it deliberately: it changes what users see, not just what is stored."
+        },
+        "storage_mode": {
+          "enum": [
+            "direct_lake",
+            "import",
+            "direct_query"
+          ],
+          "description": "direct_lake reads OneLake delta files with no copy and no refresh. It CANNOT bind to a view -- see tables.source_table."
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "item",
+            "kind"
+          ],
+          "properties": {
+            "item": {
+              "type": "string",
+              "description": "The lakehouse or warehouse holding the gold tables, e.g. wh_gold."
+            },
+            "kind": {
+              "enum": [
+                "warehouse",
+                "lakehouse"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hide_columns_matching": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Glob patterns for columns hidden from report authors -- surrogate keys and load metadata. Hidden, not omitted: relationships and measures still need them.",
+          "default": [
+            "_*",
+            "*_sk",
+            "_tracked_hash"
+          ]
+        },
+        "measure_format": {
+          "type": "string",
+          "description": "Format string applied to measures that declare none."
+        }
+      }
+    },
+    "tables": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "source_table",
+          "kind"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name report authors see. Business language, not warehouse language: 'Customer', not 'dim_customer'."
+          },
+          "source_table": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+            "description": "Schema-qualified source, e.g. dbo.dim_customer. Under direct_lake this MUST be a physical table: DirectLake reads delta files, and a view has none, so binding to bi.vw_* silently falls back to DirectQuery."
+          },
+          "kind": {
+            "enum": [
+              "fact",
+              "dimension",
+              "date"
+            ],
+            "description": "date marks the table for MarkAsDateTable, without which time intelligence returns wrong results rather than an error."
+          },
+          "description": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string",
+            "description": "Column uniquely identifying a row. Required on dimensions -- a relationship to a non-unique column is rejected by the engine at deploy time."
+          },
+          "hidden": {
+            "type": "boolean",
+            "default": false
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source"
+              ],
+              "properties": {
+                "source": {
+                  "type": "string",
+                  "description": "Column name in source_table."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Display name; defaults to source."
+                },
+                "description": {
+                  "type": "string"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "data_category": {
+                  "enum": [
+                    "Address",
+                    "City",
+                    "Continent",
+                    "Country",
+                    "County",
+                    "Latitude",
+                    "Longitude",
+                    "Place",
+                    "PostalCode",
+                    "StateOrProvince",
+                    "WebUrl",
+                    "ImageUrl",
+                    "Barcode"
+                  ],
+                  "description": "Lets Power BI map geography instead of plotting it as text."
+                },
+                "sort_by": {
+                  "type": "string",
+                  "description": "Another column supplying sort order -- month_name sorted by month, without which charts read April, August, December."
+                },
+                "summarize_by": {
+                  "enum": [
+                    "none",
+                    "sum",
+                    "count",
+                    "min",
+                    "max",
+                    "average",
+                    "distinctCount"
+                  ],
+                  "default": "none",
+                  "description": "Defaults to none deliberately. Implicit aggregation lets a report author drag a raw column onto a chart and get a number that no measure defines."
+                },
+                "type": {
+                  "enum": [
+                    "string",
+                    "int64",
+                    "decimal",
+                    "double",
+                    "dateTime",
+                    "boolean"
+                  ],
+                  "description": "Tabular type, for a source table the gold mapping does not describe -- an operational table like the audit, for instance. Types normally come from fabric/05-gold.yaml; without either, a column defaults to string, and a numeric column typed as string is a model with no SUM and nothing saying why."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "from_table",
+          "from_column",
+          "to_table",
+          "to_column"
+        ],
+        "properties": {
+          "from_table": {
+            "type": "string",
+            "description": "The many side -- normally the fact."
+          },
+          "from_column": {
+            "type": "string"
+          },
+          "to_table": {
+            "type": "string",
+            "description": "The one side -- normally the dimension."
+          },
+          "to_column": {
+            "type": "string"
+          },
+          "cardinality": {
+            "enum": [
+              "many_to_one",
+              "one_to_one",
+              "one_to_many",
+              "many_to_many"
+            ],
+            "default": "many_to_one"
+          },
+          "cross_filter": {
+            "enum": [
+              "single",
+              "both"
+            ],
+            "default": "single",
+            "description": "single unless a measure genuinely needs reverse filtering. both creates ambiguous paths that make totals silently wrong."
+          },
+          "active": {
+            "type": "boolean",
+            "default": true
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "measures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "table",
+          "expression"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Business language, spaces allowed: 'Gross Margin %'."
+          },
+          "table": {
+            "type": "string",
+            "description": "Table the measure is stored on; must be declared in tables."
+          },
+          "expression": {
+            "type": "string",
+            "description": "DAX. Multi-line is fine."
+          },
+          "format": {
+            "type": "string",
+            "description": "Format string, e.g. '#,0.00' or '0.0%'."
+          },
+          "description": {
+            "type": "string",
+            "description": "Surfaces as a tooltip in the field list. This is where a business definition actually reaches the person using it."
+          },
+          "display_folder": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    },
+    "hierarchies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "table",
+          "levels"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "table": {
+            "type": "string"
+          },
+          "levels": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered coarse to fine: Year, Quarter, Month."
+          }
+        }
+      }
+    },
+    "roles": {
+      "type": "array",
+      "description": "Row-level security. Filters are DAX predicates evaluated per table.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "filters"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "table",
+                "expression"
+              ],
+              "properties": {
+                "table": {
+                  "type": "string"
+                },
+                "expression": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,420 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://techtonic/contracts/cicd/01-pipeline.schema.json",
+  "title": "C1 CI/CD Pipeline",
+  "description": "Workflows, gates and promotion rules. Every step command is resolved against the framework at validation, because a workflow referencing a script that does not exist fails only once it is running in CI. AUTHORITATIVE: validation fails the build.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "workflows",
+    "gates"
+  ],
+  "definitions": {
+    "environment": {
+      "type": "string",
+      "description": "Must be declared in fabric/01-scaffolding.yaml environments."
+    }
+  },
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "deploy_guard": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]*$",
+      "description": "Repository VARIABLE name gating every job that declares an environment. Until it is set to 'true', deploy jobs skip instead of failing -- so merging the workflows before secrets exist does not paint the repository red for a reason that is not a fault. Uses vars, not secrets: the secrets context is unavailable in a job-level `if`."
+    },
+    "deployment_pipeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The Fabric deployment pipeline, used for item promotion between workspaces.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "environment"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "environment": {
+                "$ref": "#/definitions/environment"
+              },
+              "description": {
+                "type": "string"
+              },
+              "requires_approval": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Item types promoted by the pipeline."
+        },
+        "excluded_items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Deliberately NOT promoted -- typically anything holding environment-specific state. Excluding something is a decision worth recording."
+        }
+      }
+    },
+    "parameterisation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "enum": [
+            "deployment_rules",
+            "placeholders",
+            "both"
+          ]
+        },
+        "rules": {
+          "type": "array"
+        },
+        "on_missing_parameter": {
+          "enum": [
+            "fail",
+            "warn",
+            "ignore"
+          ],
+          "description": "fail is the only safe default: an unresolved parameter otherwise deploys pointing at the previous environment."
+        }
+      }
+    },
+    "warehouse_migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "naming": {
+          "type": "string"
+        },
+        "strategy": {
+          "enum": [
+            "forward_only",
+            "reversible"
+          ]
+        },
+        "history_table": {
+          "type": "string"
+        },
+        "generated_from": {
+          "type": "string"
+        },
+        "on_drift": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "enum": [
+                "fail",
+                "warn",
+                "reconcile"
+              ]
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "workflows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "file",
+          "triggers",
+          "jobs"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "file": {
+            "type": "string",
+            "pattern": "^\\.github/workflows/[a-z0-9-]+\\.ya?ml$"
+          },
+          "description": {
+            "type": "string"
+          },
+          "triggers": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "pull_request": {
+                "type": "object",
+                "properties": {
+                  "branches": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "push": {
+                "type": "object",
+                "properties": {
+                  "branches": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "schedule": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "cron"
+                  ],
+                  "properties": {
+                    "cron": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "workflow_dispatch": {
+                "description": "Manual run. Note that `workflow_dispatch: {}` in YAML 1.1 is safe, but a bare `on:` key is not -- it parses as the boolean True.",
+                "type": [
+                  "object",
+                  "null"
+                ]
+              }
+            }
+          },
+          "jobs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "steps"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]*$"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "environment": {
+                  "$ref": "#/definitions/environment",
+                  "description": "Maps to a GitHub Environment, which is what carries required reviewers and scoped secrets. A job deploying to prod without one has no approval gate however many are declared below."
+                },
+                "needs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "steps": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Shell commands. Any `python <path>` is resolved against the repository at validation -- a step naming a script that does not exist fails only once CI is already running."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "blocks",
+          "automated"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/environment"
+            },
+            "description": "Environments this gate stands in front of."
+          },
+          "automated": {
+            "type": "boolean"
+          },
+          "approvers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Required when automated is false. A manual gate with no named approver is not a gate."
+          },
+          "criteria": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "schema_rollback": {
+          "type": "object",
+          "properties": {
+            "supported": {
+              "type": "boolean"
+            },
+            "mitigation": {
+              "type": "string"
+            }
+          }
+        },
+        "data_rollback": {
+          "type": "object",
+          "properties": {
+            "mechanism": {
+              "type": "string"
+            },
+            "retention_days": {
+              "type": "integer"
+            }
+          }
+        },
+        "rto_minutes": {
+          "type": "integer"
+        },
+        "rpo_minutes": {
+          "type": "integer"
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Secret NAMES only. Values are never in a spec -- check_secrets fails the build on a literal.",
+      "properties": {
+        "store": {
+          "type": "string"
+        },
+        "vault": {
+          "type": "string"
+        },
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Environment variable names the workflows expect, e.g. AZURE_CLIENT_ID."
+        }
+      }
+    },
+    "promotion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mechanism"
+      ],
+      "description": "How this PROJECT promotes between environments. A per-project decision: the framework itself is never deployed to Fabric, so only project artefacts are promoted, and different projects can reasonably differ.",
+      "properties": {
+        "mechanism": {
+          "enum": [
+            "scripts",
+            "deployment_pipeline"
+          ],
+          "description": "scripts: each environment is built from the spec by the deploy scripts, so the SPEC is the source of truth and a hand edit in a workspace cannot travel forward. deployment_pipeline: Fabric promotes what is in the previous workspace, making that WORKSPACE the source of truth. Not implemented -- validation rejects it rather than pretending."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Why this mechanism suits this project. Required in practice when a deployment_pipeline block is also present, so a reader is not left guessing which one promotes."
+        }
+      }
+    },
+    "framework": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "path"
+      ],
+      "description": "Where CI obtains the framework, when it lives in a DIFFERENT repository from the project. Omit when both share a repository. The generator emits a second actions/checkout so every `python <path>` step resolves exactly as it does locally.",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[^/]+/[^/]+$",
+          "description": "owner/repo of the framework."
+        },
+        "ref": {
+          "type": "string",
+          "description": "Tag, branch or SHA. PIN IT to a tag: tracking a branch means a framework change can break this project's build with no commit here explaining why, which is the invisible coupling a split is supposed to remove."
+        },
+        "path": {
+          "type": "string",
+          "description": "Checkout path, e.g. AzureFabricMCP. Step paths are written relative to it, so keeping the same name as the framework repo folder means nothing else changes."
+        },
+        "token_secret": {
+          "type": "string",
+          "description": "Secret holding a PAT with read access, required while the framework repo is private. Omit if public."
+        }
+      }
+    }
+  }
+}

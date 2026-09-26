@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://techtonic.io/fabric/contracts/fabric/02-sources.schema.json",
+  "title": "Fabric Sources",
+  "description": "Stage 2 of the Fabric track. The contract with upstream: every system ingested from, every entity it delivers, every column it emits, and every defect it is known to contain.\n\nThis is the only place a source column is declared. Because 01-scaffolding sets `require_exhaustive_column_mapping`, a column declared here must be mapped or explicitly excluded downstream -- so a new upstream column becomes a review, never a silent drop.\n\nAUTHORITATIVE -- a non-conforming spec fails the build.",
+
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "sources"],
+  "additionalProperties": false,
+
+  "properties": {
+    "apiVersion": { "const": "fabric.techtonic.io/v1" },
+    "kind": { "const": "SourceRegistry" },
+
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "scaffolding_ref": { "type": "string" }
+      }
+    },
+
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "domain", "system_type", "owner", "connection", "entities"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{1,29}$",
+            "description": "Source system id. Appears in bronze table names, so provenance is readable without opening lineage."
+          },
+          "description": { "type": "string" },
+          "domain": {
+            "type": "string",
+            "description": "Must match a domain declared in 01-scaffolding.yaml."
+          },
+          "system_type": {
+            "enum": ["relational_export", "rest_api", "database", "event_stream", "file_drop", "sharepoint", "blob_storage"]
+          },
+          "owner": { "type": "string", "description": "The upstream team, not the data team." },
+
+          "connection": {
+            "type": "object",
+            "required": ["kind"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": { "enum": ["file", "jdbc", "rest", "eventhub", "shortcut"] },
+              "format": { "enum": ["csv", "parquet", "json", "delta", "avro", "jsonl"] },
+              "location": { "type": "string", "description": "Deployed location. Use ${VAR} for anything environment-specific." },
+              "location_dev": { "type": "string", "description": "Local path used before a real landing zone exists." },
+              "options": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "header": { "type": "boolean" },
+                  "delimiter": { "type": "string" },
+                  "encoding": { "type": "string" },
+                  "quote": { "type": "string" },
+                  "infer_schema": {
+                    "type": "boolean",
+                    "description": "Should be false. Inference reads the file twice and lets the schema change silently when the data changes -- which is exactly the drift the landing checks exist to catch."
+                  }
+                }
+              }
+            }
+          },
+
+          "sla": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "delivery_by": { "type": "string", "description": "When upstream commits to delivering, e.g. '02:00 IST'." },
+              "freshness_hours": { "type": "number", "minimum": 0 }
+            }
+          },
+
+          "entities": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/$defs/entity" }
+          }
+        }
+      }
+    },
+
+    "known_issues": {
+      "type": "array",
+      "description": "Defects upstream is KNOWN to contain, with observed rates. Silver cleansing rules trace back to these ids, so a rule reads as a deliberate response to a named problem rather than defensive guesswork -- and the validator can prove every documented defect is handled.",
+      "items": {
+        "type": "object",
+        "required": ["id", "entity", "description", "handled_by"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Z]+-[0-9]{3}$",
+            "description": "Stable id, e.g. DUP-001. Referenced by silver rules."
+          },
+          "entity": { "type": "string" },
+          "description": { "type": "string", "minLength": 20 },
+          "observed_rate": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Measured share, not a guess. Data-quality thresholds are calibrated from this."
+          },
+          "handled_by": {
+            "type": "string",
+            "description": "layer.table.rule that deals with it, e.g. silver.stg_orders.deduplicate."
+          }
+        }
+      }
+    }
+  },
+
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "required": ["name", "description", "primary_key", "load_pattern", "columns"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,39}$" },
+        "description": { "type": "string" },
+        "file_pattern": { "type": "string" },
+        "primary_key": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "watermark_column": {
+          "type": ["string", "null"],
+          "description": "Column the incremental load compares against its high-water mark. Required when load_pattern is incremental -- without it bronze re-appends the whole source on every run, and downstream deduplication hides it."
+        },
+        "load_pattern": { "enum": ["full", "incremental", "append_only", "cdc"] },
+        "expected_row_order": {
+          "type": ["number", "string"],
+          "description": "Order of magnitude, for anomaly detection. Catches a truncated or duplicated export."
+        },
+        "foreign_keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["columns", "references", "references_columns"],
+            "additionalProperties": false,
+            "properties": {
+              "columns": { "type": "array", "items": { "type": "string" } },
+              "references": { "type": "string", "description": "source.entity" },
+              "references_columns": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Named `references_columns`, not `on` -- a bare `on:` key parses as boolean true under YAML 1.1."
+              }
+            }
+          }
+        },
+        "columns": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/column" } }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "load_pattern": { "const": "incremental" } }, "required": ["load_pattern"] },
+          "then": {
+            "required": ["watermark_column"],
+            "properties": { "watermark_column": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    },
+
+    "column": {
+      "type": "object",
+      "required": ["name", "type"],
+      "additionalProperties": false,
+      "description": "additionalProperties is false on purpose. In YAML flow style an unquoted comma ends the value, so `description: Natural key, format \"X\"` silently becomes a truncated description PLUS a null-valued key. Rejecting unknown keys turns that into a build failure instead of quietly losing half the documentation.",
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+        "type": { "enum": ["string", "integer", "bigint", "decimal", "boolean", "date", "timestamp"] },
+        "nullable": { "type": "boolean" },
+        "precision": { "type": "integer", "minimum": 1 },
+        "scale": { "type": "integer", "minimum": 0 },
+        "description": { "type": "string" },
+        "domain_values": {
+          "type": "array",
+          "description": "Closed value set. Enforced downstream by enforce_allowed_values.",
+          "items": {}
+        },
+        "pii": {
+          "enum": ["name", "email", "phone", "address", "government_id", "financial", "health"],
+          "description": "Classification drives masking. 01-scaffolding `require_pii_classification` fails the build if a PII column reaches silver unmasked and undropped."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "decimal" } }, "required": ["type"] },
+          "then": { "required": ["precision", "scale"] }
+        }
+      ]
+    }
+  }
+}

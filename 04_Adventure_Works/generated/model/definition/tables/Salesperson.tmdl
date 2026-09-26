@@ -1,0 +1,48 @@
+/// Sales staff with title and UPN for row-level security.
+table Salesperson
+	lineageTag: ae9ceeab-a990-583a-9b3a-5025df064745
+
+	column 'Employee ID'
+		dataType: int64
+		sourceColumn: employee_key
+		summarizeBy: none
+		lineageTag: fb3c0590-e8ae-5d5c-9456-a16dc176cc18
+
+	column 'Employee Number'
+		dataType: int64
+		sourceColumn: employee_id
+		summarizeBy: none
+		lineageTag: 7b0b3dc0-ec8c-5ea3-a74a-440aab011902
+
+	column 'Salesperson Name'
+		dataType: string
+		sourceColumn: salesperson_name
+		summarizeBy: none
+		lineageTag: d25390af-a452-50fa-8fb9-0138f2ce8c19
+
+	column Title
+		dataType: string
+		sourceColumn: title
+		summarizeBy: none
+		lineageTag: bcc5eab2-51a7-5f3f-aaca-950df487a7fc
+
+	column UPN
+		dataType: string
+		isHidden
+		sourceColumn: upn
+		summarizeBy: none
+		lineageTag: b34552eb-995a-593a-82a3-8bca8d78a3e2
+
+	column salesperson_sk
+		dataType: int64
+		isHidden
+		sourceColumn: salesperson_sk
+		summarizeBy: none
+		lineageTag: 1664a965-9e7a-5d2d-92f3-ba28c394fa0d
+
+	partition Salesperson = entity
+		mode: directLake
+		source
+			entityName: dim_salesperson
+			schemaName: dbo
+			expressionSource: DatabaseQuery

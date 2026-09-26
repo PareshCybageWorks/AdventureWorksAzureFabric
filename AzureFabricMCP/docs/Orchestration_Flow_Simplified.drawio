@@ -1,0 +1,115 @@
+<mxfile host="app.diagrams.net" agent="Mozilla/5.0">
+  <diagram id="orch-flow" name="AI Master Orchestrator - Simplified Flow">
+    <mxGraphModel dx="1180" dy="795" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="1400" background="none" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=24;fontStyle=1;align=center;verticalAlign=top;spacingTop=10;" value="&amp;nbsp;AI Master Orchestrator Flow" vertex="1">
+          <mxGeometry height="40" width="900" x="50" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="goal" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FF6B6B;strokeColor=#C92A2A;strokeWidth=3;fontSize=14;fontStyle=1;shadow=1;" value="🎯 Business Goal" vertex="1">
+          <mxGeometry height="60" width="200" x="400" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow1" edge="1" parent="1" source="goal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;strokeColor=#333;strokeWidth=2;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="orchestrator" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4ECDC4;strokeColor=#0A8F8E;strokeWidth=3;fontSize=14;fontStyle=1;shadow=1;" value="🤖 AI Master Orchestrator&#xa;(Claude)" vertex="1">
+          <mxGeometry height="80" width="280" x="360" y="170" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow2" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;strokeColor=#333;strokeWidth=2;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="tier3-label" parent="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" value="MCP Servers" vertex="1">
+          <mxGeometry height="20" width="150" x="50" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="specs" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#95E1D3;strokeColor=#38A169;strokeWidth=2;fontSize=12;shadow=1;" value="📋 Specs Engine&#xa;Config Parsing" vertex="1">
+          <mxGeometry height="70" width="140" x="36" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="fabric-mcp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#95E1D3;strokeColor=#38A169;strokeWidth=2;fontSize=12;shadow=1;" value="⚙️ Fabric MCP&#xa;Infrastructure" vertex="1">
+          <mxGeometry height="70" width="140" x="430" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="powerbi-mcp" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#95E1D3;strokeColor=#38A169;strokeWidth=2;fontSize=12;shadow=1;" value="📊 Power BI MCP&#xa;Analytics" vertex="1">
+          <mxGeometry height="70" width="140" x="780" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-specs" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="specs" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="120" y="210.09" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow-fabric" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="fabric-mcp" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-powerbi" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#666;strokeWidth=2;endArrow=classic;endFill=1;" target="powerbi-mcp" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow-specs-down" edge="1" parent="1" source="specs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#999;strokeWidth=1;dashed=1;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow-fabric-down" edge="1" parent="1" source="fabric-mcp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#999;strokeWidth=1;dashed=1;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="arrow-powerbi-down" edge="1" parent="1" source="powerbi-mcp" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#999;strokeWidth=1;dashed=1;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="500" y="420" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="tier4-label" parent="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" value="Feature-Based Agents" vertex="1">
+          <mxGeometry height="20" width="150" x="50" y="430" as="geometry" />
+        </mxCell>
+        <mxCell id="agents" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFE66D;strokeColor=#F59E0B;strokeWidth=2;fontSize=12;shadow=1;" value="🔄 Data Ingestion&#xa;🔀 Transform (DBT)&#xa;✓ Quality Validation&#xa;📊 Analytics&#xa;🚀 DevOps" vertex="1">
+          <mxGeometry height="100" width="250" x="375" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow3" edge="1" parent="1" source="agents" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;strokeColor=#333;strokeWidth=2;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="tier5-label" parent="1" style="text;html=1;fontSize=12;fontStyle=1;align=left;verticalAlign=top;" value="CI/CD Pipeline" vertex="1">
+          <mxGeometry height="20" width="150" x="50" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B4A7FF;strokeColor=#6366F1;strokeWidth=2;fontSize=12;shadow=1;" value="GitHub Actions&#xa;📌 Test → Deploy Dev → Deploy QA → Approval → Prod" vertex="1">
+          <mxGeometry height="80" width="300" x="350" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="arrow4" edge="1" parent="1" source="cicd" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=12;strokeColor=#333;strokeWidth=2;endArrow=classic;endFill=1;" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="solution" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#A78BFA;strokeColor=#8B5CF6;strokeWidth=3;fontSize=14;fontStyle=1;shadow=1;" value="✨ Enterprise AI Solution" vertex="1">
+          <mxGeometry height="70" width="280" x="360" y="680" as="geometry" />
+        </mxCell>
+        <mxCell id="feedback" edge="1" parent="1" source="solution" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontSize=11;strokeColor=#A78BFA;strokeWidth=2;dashed=1;endArrow=classic;endFill=1;" value="Feedback Loop">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="200" y="210" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="support-label" parent="1" style="text;html=1;fontSize=11;fontStyle=1;align=center;verticalAlign=top;" value="Support Services" vertex="1">
+          <mxGeometry height="20" width="120" x="780" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="monitoring" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFD6E8;strokeColor=#EC4899;strokeWidth=1;fontSize=10;" value="📊 Monitoring" vertex="1">
+          <mxGeometry height="40" width="100" x="800" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="security" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFD6E8;strokeColor=#EC4899;strokeWidth=1;fontSize=10;" value="🔒 Security" vertex="1">
+          <mxGeometry height="40" width="100" x="800" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="compliance" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFD6E8;strokeColor=#EC4899;strokeWidth=1;fontSize=10;" value="✓ Compliance" vertex="1">
+          <mxGeometry height="40" width="100" x="800" y="540" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" parent="1" style="text;html=1;fontSize=11;fontStyle=1;align=left;verticalAlign=top;" value="Legend" vertex="1">
+          <mxGeometry height="20" width="100" x="710" y="665" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-solid" parent="1" style="text;html=1;fontSize=10;align=left;verticalAlign=top;" value="→ Synchronous (Direct flow)" vertex="1">
+          <mxGeometry height="20" width="200" x="710" y="690" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-dashed" parent="1" style="text;html=1;fontSize=10;align=left;verticalAlign=top;" value="⇢ Asynchronous (Feedback/Parallel)" vertex="1">
+          <mxGeometry height="20" width="250" x="710" y="715" as="geometry" />
+        </mxCell>
+        <mxCell id="version" parent="1" style="text;html=1;fontSize=9;align=right;verticalAlign=top;fontColor=#999;" value="v1.0 | July 22, 2026 | AI Master Orchestrator" vertex="1">
+          <mxGeometry height="20" width="400" x="500" y="1350" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

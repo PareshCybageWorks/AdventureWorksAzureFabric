@@ -1,0 +1,244 @@
+# =============================================================================
+# fabric/01-scaffolding.yaml -- Stage F1  [TEMPLATE]
+# =============================================================================
+# Copy into <project>/fabric/ and replace every <ANGLE_BRACKET> value.
+# Validate with:
+#   python framework/generators/validate.py --project <project> --track fabric
+#
+# Procedure (what to ask, what to derive): framework/prompts/fabric/01-scaffolding.md
+# Contract  (authoritative shape)        : framework/contracts/fabric/01-scaffolding.schema.json
+# =============================================================================
+
+apiVersion: fabric.techtonic.io/v1
+kind: FabricScaffolding
+
+metadata:
+  name: adventure-works-04
+  description: Sales analytics on Adventure Works data - orders, customers, resellers, products
+  owner: Sales Analytics Team
+  contact: pareshran@cybage.com
+  # The framework is a SEPARATE repository, cloned as a sibling directory
+  # named AzureFabricMCP. CI checks it out to the same relative path, so this
+  # value resolves identically in both places.
+  framework_path: ../AzureFabricMCP/framework
+
+tenant:
+  tenant_id: ${FABRIC_TENANT_ID}
+  region: eastus
+  onelake_endpoint: https://onelakeeastus.pbidedicated.windows.net
+  capacity:
+    default_sku: F64
+    default_capacity_id: ${FABRIC_CAPACITY_ID}
+    is_trial: true
+
+auth:
+  mode: service_principal
+  client_id: ${FABRIC_CLIENT_ID}
+  # A REFERENCE, never a value -- a literal here fails check_secrets.
+  #
+  # An environment variable is the default because it is resolved FIRST and
+  # needs nobody's permission: CI injects it from repository secrets, and a
+  # local run picks it up from the shell. Key Vault is supported
+  # (keyvault://<vault>/<secret>) but granting a principal access needs
+  # roleAssignments/write, which a Contributor does not hold -- so it is a
+  # deliberate choice to make later, not a default to inherit.
+  client_secret_ref: ${AZURE_CLIENT_SECRET}
+
+# medallion unless multiple teams own pipelines end to end with independent
+# release cadences. `rationale` is required and length-checked.
+topology:
+  pattern: medallion
+  rationale: >-
+    Single sales analytics team, one domain (sales), daily batch refresh cycle.
+    Medallion is the right fit: bronze→silver→gold pipeline owned end-to-end
+    by one team with a unified release cadence. Mesh overhead does not pay off
+    at one domain.
+  layers:
+    # Quote purposes -- an unquoted comma in flow style ends the value.
+    - { name: bronze, purpose: "Raw landing, ingested as-is, immutable" }
+    - { name: silver, purpose: "Cleansed, deduplicated, conformed staging" }
+    - { name: gold,   purpose: "Star schema and reporting views" }
+
+domains:
+  - name: sales
+    description: Sales performance, channels (B2C Internet, B2B Reseller), products, and customer metrics
+    owner: Sales Analytics Team
+    sources: [adventure_works]
+    publishes_data_product: false
+
+environments:
+  - { name: dev,  workspace: ADW_dev,  workspace_id: bd6a388c-5be5-4c31-8c6f-856513479712, capacity_sku: F64 }
+  - { name: uat, workspace: ADW_uat, workspace_id: 44fa9ada-f578-4c5c-8148-1003890f6547, capacity_sku: F64 }
+  - { name: prod, workspace: ADW_prod, workspace_id: 0dfa04b4-1947-4303-ae1c-767d7efc2bcc, capacity_sku: F64,
+      is_production: true }            # exactly one; resolved by id, never name
+
+naming:
+  workspace:
+    medallion: { dev: ADW_dev, uat: ADW_uat, prod: ADW_prod }
+    mesh: "{domain}<Suffix>_{env}"
+  notebook: "nb_{verb}_{entity}"
+  pipeline: "p_{verb}_{layer}"
+  semantic_model: "sm_{domain}"
+  report: "rpt_{domain}_{purpose}"
+  deployment_pipeline: "dp-sales"
+  verbs: { bronze: load, silver: clean, gold: build, master: orchestrate }
+  pipelines:
+    bronze: p_load_bronze
+    silver: p_clean_silver
+    gold: p_build_gold
+    master: p_orchestrate_master
+  tables:
+    bronze: "bronze_{source}_{entity}"
+    silver: "stg_{entity}"             # staging, NOT dim_/fct_
+    gold_dimension: "dim_{entity}"
+    gold_fact: "fct_{entity}"
+    gold_view: "vw_{purpose}"
+  table_prefixes:                      # enforced by the validator
+    silver: [stg_]
+    gold: [dim_, fct_, vw_]
+  casing: snake_case
+
+storage:
+  items:
+    medallion:
+      bronze: { item: lakehouse, name: lh_bronze }
+      silver: { item: lakehouse, name: lh_silver }
+      gold:   { item: warehouse, name: wh_gold }   # warehouse if gold needs T-SQL/views
+    mesh:
+      per_domain: { item: warehouse, name: "wh_{domain}" }
+  bronze:
+    item: lakehouse
+    landing_path: "Files/bronze/{source}/{entity}/ingest_date={ingest_date}"
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 730
+    immutable: true
+  silver:
+    item: lakehouse
+    table_path: "Tables/{table}"
+    format: delta
+    retention_days: 365
+  gold:
+    item: warehouse
+    format: delta
+    schemas: { physical: dbo, reporting: bi }
+    write_mode: warehouse_connector    # OVERWRITE ONLY; append is unsupported
+    staging_path: "Files/staging/gold/{table}"
+
+# OPTIONAL. Mirror deployed items into the repo as readable text, so the
+# deployed state can be diffed across dates rather than recalled. It is an
+# audit mirror, NOT a deployment path -- items reach a workspace only via
+# specs -> generated/ -> push_items.py, and this commits outward.
+#
+# Delete this block if you do not want it. Two one-time prerequisites that no
+# script can perform for you:
+#   - a tenant admin enables GitHub sync (Admin portal > Tenant settings)
+#   - a Fabric connection holds a GitHub PAT with `repo` scope; only its id
+#     goes in the spec, never the token. Azure DevOps needs neither.
+#
+# `branch` is absent on purpose -- read from environments[].branch above.
+# git_integration:
+#   provider: GitHub                        # or AzureDevOps
+#   # GitHub:      <owner>/<repo>
+#   # AzureDevOps: <organisation>/<project>/<repo>  -- the project is a
+#   #              separate level and cannot be inferred from the other two
+#   repository: <owner>/<repo>
+#   directory: /AzureFabricCode             # must NOT overlap generated/ or a
+#                                           # spec folder: Fabric rewrites the
+#                                           # whole subtree beneath it
+#   connection_id: ${FABRIC_GITHUB_CONNECTION_ID}
+#   environments: [dev]                     # promoted envs receive the same
+#                                           # artefacts; mirroring them repeats
+#                                           # the record under another branch
+#   direction: workspace_to_git             # the only value; inward sync would
+#                                           # race push_items.py, silently
+
+# organise_items.py files only what a folder DECLARES here. Anything not named
+# stays at the workspace root -- and the run reports "0 unmatched" while doing
+# it, because an item nobody planned for was never in the plan.
+#
+# This list previously stopped at 5_datastore, so every project built from it
+# left four items loose: nb_cascade_quarantine (does not match nb_clean_*),
+# nb_dq_monitor (belongs to no layer), the semantic model and the report. The
+# last two are what a business user actually opens.
+#
+# `folder-coverage` in validate.py now checks this, so a gap fails locally
+# rather than being discovered by looking at the workspace.
+workspace_folders:
+  - name: "0_config"
+    layer: null
+    contains:
+      - { item_type: Environment, name: env_spark }
+    subfolders:
+      # Cross-layer operational notebooks. nb_dq_monitor reads bronze, silver
+      # AND gold, so it belongs to no single layer folder.
+      - { name: notebook, contains: [{ item_type: Notebook, name: nb_dq_monitor }] }
+
+  - name: "1_bronze"
+    layer: bronze
+    subfolders:
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_load_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_load_bronze }] }
+  - name: "2_silver"
+    layer: silver
+    subfolders:
+      # nb_cascade_quarantine is layer work -- run last by p_clean_silver, and
+      # it rewrites silver tables. Named explicitly because it does not match
+      # nb_clean_*.
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_clean_*" },
+                                     { item_type: Notebook, name: nb_cascade_quarantine }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_clean_silver }] }
+  - name: "3_gold"
+    layer: gold
+    subfolders:
+      # nb_build_* also catches nb_build_bi_views and nb_build_audit, both of
+      # which p_build_gold runs after the tables they read.
+      - { name: notebook, contains: [{ item_type: Notebook, name_pattern: "nb_build_*" }] }
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_build_gold }] }
+  - name: "4_master"
+    layer: null
+    subfolders:
+      - { name: pipeline, contains: [{ item_type: DataPipeline, name: p_orchestrate_master }] }
+  - name: "5_datastore"
+    layer: null
+    contains:
+      - { item_type: Lakehouse, name: lh_bronze }
+      - { item_type: Lakehouse, name: lh_silver }
+      - { item_type: Warehouse, name: wh_gold }
+
+  - name: "6_powerbi"
+    layer: null
+    description: >-
+      The reporting surface: the semantic model and every report bound to it.
+
+      Separate from the layer folders because these are consumed rather than
+      run. Nothing here is orchestrated by a pipeline, and the audience is
+      report authors rather than engineers.
+    subfolders:
+      - { name: semanticmodel, contains: [{ item_type: SemanticModel, name_pattern: "sm_*" }] }
+      # `*`, not `rpt_*`. A report DEPLOYS under its display_name -- 02-reports
+      # declares `name: rpt_x` for the convention and `display_name` for the
+      # people who open it, and push_reports uses the latter. Matching on `*`
+      # needs no resolution between the two.
+      - { name: report,        contains: [{ item_type: Report, name_pattern: "*" }] }
+
+audit_columns:
+  bronze:
+    - { name: _ingested_at,  type: timestamp, source: current_timestamp() }
+    - { name: _source,       type: string,    source: spec.source_system }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _source_file,  type: string,    source: runtime.input_file_name }
+  silver:
+    - { name: _processed_at, type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+    - { name: _record_hash,  type: string,    source: computed.row_hash }
+  gold:
+    - { name: _built_at,     type: timestamp, source: current_timestamp() }
+    - { name: _load_id,      type: string,    source: runtime.load_id }
+
+conventions:
+  require_business_key: true
+  require_declared_grain: true
+  require_exhaustive_column_mapping: true
+  require_source_registration: true
+  require_pii_classification: true
